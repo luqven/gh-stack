@@ -1,0 +1,25 @@
+[package]
+name = "gh-stack"
+version = "0.1.6"
+authors = ["Timothy Andrew <mail@timothyandrew.net>"]
+license = "MIT"
+repository = "https://github.com/timothyandrew/gh-stack"
+readme = "README.md"
+edition = "2018"
+description = "Manage stacked PR workflows on Github"
+keywords = ["github", "code-review", "stacked-pr"]
+categories = ["command-line-utilities"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = { version = "0.10.6", features = ["json"] }
+tokio = { version = "0.2", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+futures = "0.3.5"
+petgraph = "0.5"
+regex = "1"
+git2 = "0.13"
+dialoguer = "0.6.2"
+clap = "2.33"
+console = "0.11"
