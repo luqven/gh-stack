@@ -31,7 +31,8 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
                 .long("prelude")
                 .short("p")
                 .value_name("FILE")
-                .help("Prepend the annotation with the contents of this file"));
+                .help("Prepend the annotation with the contents of this file"))
+        .arg(repo.clone());
 
     let log = SubCommand::with_name("log")
         .about("Print a list of all pull requests in a stack to STDOUT")
@@ -113,7 +114,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match matches.subcommand() {
         ("annotate", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-            let stack = build_pr_stack(identifier, &credentials).await?;
+            let repo = m.value_of("repo");
+            // if repo is None, we'll just use the default. Otherwise we'll
+            // filter by repo.
+            let stack = if repo.is_some() {
+                // TODO: remove this logging
+                println!("Looking for PRs in: {} 🔍", repo.unwrap());
+                build_pr_stack_for_repo(identifier, repo.unwrap(), &credentials).await?
+            } else {
+                build_pr_stack(identifier, &credentials).await?
+            };
             let table = markdown::build_table(&stack, identifier, m.value_of("prelude"));
 
             for (pr, _) in stack.iter() {
