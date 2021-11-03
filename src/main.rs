@@ -18,6 +18,11 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .required(true)
         .help("All pull requests containing this identifier in their title form a stack");
 
+    let repo = Arg::with_name("repo")
+        .index(2)
+        .required(false)
+        .help("Filter PR query by this repository name");
+
     let annotate = SubCommand::with_name("annotate")
         .about("Annotate the descriptions of all PRs in a stack with metadata about all PRs in the stack")
         .setting(AppSettings::ArgRequiredElseHelp)
@@ -31,7 +36,8 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
     let log = SubCommand::with_name("log")
         .about("Print a list of all pull requests in a stack to STDOUT")
         .setting(AppSettings::ArgRequiredElseHelp)
-        .arg(identifier.clone());
+        .arg(identifier.clone())
+        .arg(repo.clone());
 
     let autorebase = SubCommand::with_name("autorebase")
         .about("Rebuild a stack based on changes to local branches and mirror these changes up to the remote")
@@ -82,6 +88,17 @@ async fn build_pr_stack(pattern: &str, credentials: &Credentials) -> Result<Flat
     Ok(stack)
 }
 
+async fn build_pr_stack_for_repo(pattern: &str, repo:&str, credentials: &Credentials) -> Result<FlatDep, Box<dyn Error>> {
+    let prs = api::search::fetch_repo_pull_requests_matching(pattern, repo, &credentials).await?;
+    let prs = prs
+        .into_iter()
+        .map(Rc::new)
+        .collect::<Vec<Rc<PullRequest>>>();
+    let graph = graph::build(&prs);
+    let stack = graph::log(&graph);
+    Ok(stack)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let env: HashMap<String, String> = env::vars().collect();
@@ -111,7 +128,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         ("log", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-            let stack = build_pr_stack(identifier, &credentials).await?;
+            let repo = m.value_of("repo");
+            // if repo is None, we'll just use the default. Otherwise we'll 
+            // filter by repo.
+            let stack = if repo.is_some() {
+                // TODO: remove this logging
+                println!("Looking for PRs in: {} 🔍", repo.unwrap());
+                build_pr_stack_for_repo(identifier, repo.unwrap(), &credentials).await?
+            } else {
+                build_pr_stack(identifier, &credentials).await?
+            };
 
             for (pr, maybe_parent) in stack {
                 match maybe_parent {
