@@ -17,6 +17,12 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .required(true)
         .help("All pull requests containing this identifier in their title form a stack");
 
+    let repository = Arg::with_name("repository")
+        .long("repository")
+        .short("r")
+        .takes_value(true)
+        .help("Remote repository to filter identifier search results by");
+
     let exclude = Arg::with_name("exclude")
         .long("excl")
         .short("e")
@@ -39,7 +45,8 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .about("Print a list of all pull requests in a stack to STDOUT")
         .setting(AppSettings::ArgRequiredElseHelp)
         .arg(exclude.clone())
-        .arg(identifier.clone());
+        .arg(identifier.clone())
+        .arg(repository.clone());
 
     let autorebase = SubCommand::with_name("autorebase")
         .about("Rebuild a stack based on changes to local branches and mirror these changes up to the remote")
@@ -100,6 +107,24 @@ async fn build_pr_stack(
     Ok(stack)
 }
 
+async fn build_pr_stack_for_repo(
+    pattern: &str,
+    repository: &str,
+    credentials: &Credentials,
+    exclude: Vec<String>,
+) -> Result<FlatDep, Box<dyn Error>> {
+    let prs = api::search::fetch_matching_pull_requests_from_repository(pattern, repository, &credentials).await?;
+
+    let prs = prs
+        .into_iter()
+        .filter(|pr| !exclude.contains(&pr.number().to_string()))
+        .map(Rc::new)
+        .collect::<Vec<Rc<PullRequest>>>();
+    let graph = graph::build(&prs);
+    let stack = graph::log(&graph);
+    Ok(stack)
+}
+
 fn get_excluded(m: &ArgMatches) -> Vec<String> {
     let excluded = m.values_of("exclude");
 
@@ -135,7 +160,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         ("log", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-            let stack = build_pr_stack(identifier, &credentials, get_excluded(m)).await?;
+
+            // If no repository is specified, use build_pr_stack. Otherwise, use
+            // build_pr_stack_for_repo.
+            let stack = if m.value_of("repository").is_none() {
+                build_pr_stack(identifier, &credentials, get_excluded(m)).await?
+            } else {
+                let repository = m.value_of("repository").unwrap();
+                println!(
+                    "Searching for {} identifier in {} repo",
+                    style(identifier).bold(),
+                    style(repository).bold()
+                );
+                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m)).await?
+            };
 
             for (pr, maybe_parent) in stack {
                 match maybe_parent {
