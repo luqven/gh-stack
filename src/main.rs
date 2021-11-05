@@ -35,6 +35,7 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .setting(AppSettings::ArgRequiredElseHelp)
         .arg(identifier.clone())
         .arg(exclude.clone())
+        .arg(repository.clone())
         .arg(Arg::with_name("prelude")
                 .long("prelude")
                 .short("p")
@@ -145,7 +146,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match matches.subcommand() {
         ("annotate", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-            let stack = build_pr_stack(identifier, &credentials, get_excluded(m)).await?;
+            // If no repository is specified, use build_pr_stack. Otherwise, use
+            // build_pr_stack_for_repo.
+            let stack = if m.value_of("repository").is_none() {
+                build_pr_stack(identifier, &credentials, get_excluded(m)).await?
+            } else {
+                let repository = m.value_of("repository").unwrap();
+                println!(
+                    "Searching for {} identifier in {} repo",
+                    style(identifier).bold(),
+                    style(repository).bold()
+                );
+                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m)).await?
+            };
             let table = markdown::build_table(&stack, identifier, m.value_of("prelude"));
 
             for (pr, _) in stack.iter() {
