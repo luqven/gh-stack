@@ -51,15 +51,15 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
 
     let autorebase = SubCommand::with_name("autorebase")
         .about("Rebuild a stack based on changes to local branches and mirror these changes up to the remote")
-        .arg(Arg::with_name("remote")
-                .long("remote")
-                .short("r")
-                .value_name("REMOTE")
-                .help("Name of the remote to (force-)push the updated stack to (default: `origin`)"))
-        .arg(Arg::with_name("repo")
-                .long("repo")
+        .arg(Arg::with_name("origin")
+                .long("origin")
+                .short("o")
+                .value_name("ORIGIN")
+                .help("Name of the origin to (force-)push the updated stack to (default: `origin`)"))
+        .arg(Arg::with_name("project")
+                .long("project")
                 .short("C")
-                .value_name("PATH_TO_REPO")
+                .value_name("PATH_TO_PROJECT")
                 .help("Path to a local copy of the repository"))
         .arg(Arg::with_name("boundary")
                 .long("initial-cherry-pick-boundary")
@@ -68,6 +68,7 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
                 .help("Stop the initial cherry-pick at this SHA (exclusive)"))
         .setting(AppSettings::ArgRequiredElseHelp)
         .arg(exclude.clone())
+        .arg(repository.clone())
         .arg(identifier.clone());
 
     let rebase = SubCommand::with_name("rebase")
@@ -213,17 +214,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         ("autorebase", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-            let stack = build_pr_stack(identifier, &credentials, get_excluded(m)).await?;
+            // Log an error if repository is not specified.
+            m.value_of("repository").expect("The --repository argument is required.");
+            let repository = m.value_of("repository").unwrap();
+            println!(
+                "Searching for {} identifier in {} repo",
+                style(identifier).bold(),
+                style(repository).bold()
+            );
+            let stack = build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m)).await?;
 
-            let repo = m
-                .value_of("repo")
-                .expect("The --repo argument is required.");
-            let repo = Repository::open(repo)?;
+            let project = m
+                .value_of("project")
+                .expect("The --project argument is required.");
+            let project = Repository::open(project)?;
 
-            let remote = m.value_of("remote").unwrap_or("origin");
-            let remote = repo.find_remote(remote).unwrap();
+            // defaults to "origin" if no remote is specified
+            let remote = m.value_of("origin").unwrap_or("origin");
+            let remote = project.find_remote(remote).unwrap();
 
-            git::perform_rebase(stack, &repo, remote.name().unwrap(), m.value_of("boundary"))
+            git::perform_rebase(stack, &project, remote.name().unwrap(), m.value_of("boundary"))
                 .await?;
             println!("All done!");
         }
