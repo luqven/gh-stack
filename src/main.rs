@@ -143,7 +143,7 @@ fn get_excluded(m: &ArgMatches) -> Vec<String> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    dotenv::from_filename(".gh-stack").ok();
+    dotenv::from_filename(".gh-stack.env").ok();
 
     let token = env::var("GHSTACK_OAUTH_TOKEN").expect("You didn't pass `GHSTACK_OAUTH_TOKEN`");
     let credentials = Credentials::new(&token);

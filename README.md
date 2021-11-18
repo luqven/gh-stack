@@ -58,7 +58,7 @@ $ export GHSTACK_OAUTH_TOKEN='<personal access token>'
 $ export GHSTACK_TARGET_REPOSITORY='<github repository name>'
 ```
 
-You can also store these tokens in a file named `.gh-stack` in the project root.
+You can also store these tokens in a file named `.gh-stack.env` in the project root.
 
 ## Usage
 
