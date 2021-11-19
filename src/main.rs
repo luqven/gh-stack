@@ -174,7 +174,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
                     .await?;
 
-            let table = markdown::build_table(&stack, identifier, m.value_of("prelude"));
+            let table =
+                markdown::build_table(&stack, identifier, m.value_of("prelude"), repository);
 
             for (pr, _) in stack.iter() {
                 println!("{}: {}", pr.number(), pr.title());

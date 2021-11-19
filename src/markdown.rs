@@ -3,7 +3,12 @@ use std::fs;
 use crate::api::PullRequestStatus;
 use crate::graph::FlatDep;
 
-pub fn build_table(deps: &FlatDep, title: &str, prelude_path: Option<&str>) -> String {
+pub fn build_table(
+    deps: &FlatDep,
+    title: &str,
+    prelude_path: Option<&str>,
+    repository: &str,
+) -> String {
     let is_complete = deps
         .iter()
         .all(|(node, _)| node.state() == &PullRequestStatus::Closed);
@@ -26,7 +31,10 @@ pub fn build_table(deps: &FlatDep, title: &str, prelude_path: Option<&str>) -> S
     out.push_str("|:--:|:------|:-------|:-------------:|\n");
 
     for (node, parent) in deps {
-        let badge = "![](https://img.shields.io/github/pulls/detail/state/luqven/gh-stack/{pr_number}?label=%20)".replace("{pr_number}", &node.number().to_string());
+        let badge =
+            "![](https://img.shields.io/github/pulls/detail/state/{repository}/{pr_number}?label=%20)"
+                .replace("{repository}", repository)
+                .replace("{pr_number}", &node.number().to_string());
         let badge = &format!("{}", &badge);
         let review_state = badge;
 
