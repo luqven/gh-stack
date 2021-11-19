@@ -49,18 +49,20 @@ $ cd gh-stack
 $ cargo install --force --path .
 ```
 
-```bash
-# Required.
-# Make sure to give your token read/write access to repositories you want to manage.
-$ export GHSTACK_OAUTH_TOKEN='<personal access token>'
-# Optional, but recommended.
-# If you don't supply this environment variable, you have to pass the `--repository` or `-r` flag to `gh-stack` commands.
-$ export GHSTACK_TARGET_REPOSITORY='<github repository name>'
-```
-
-You can also store these tokens in a file named `.gh-stack.env` in the project root.
-
 ## Usage
+
+> Note: If you don't have a personal access token, you can generate one here:
+> https://github.com/settings/tokens. Give your token `repo` scope permissions.
+
+```bash
+# Set the environment variable for the Github API token
+$ export GHSTACK_OAUTH_TOKEN='<personal access token>'
+
+# Set the environment variable for the repository owner/name
+$ export GHSTACK_TARGET_REPOSITORY='<github repository name>'
+
+# You can also set these in a `.gh-stack.env` file in the project root.
+```
 
 ```bash
 $ gh-stack
@@ -83,6 +85,9 @@ $ gh-stack log 'stack-identifier'
 # # Idempotently add a markdown table summarizing the stack
 # to the description of each PR in the stack for a specific repository.
 $ gh-stack annotate 'stack-identifier'
+
+# Same as above, but for the specified repository.
+$ gh-stack annotate 'stack-identifier' -r '<some/repo>'
 
 # Same as above, but precede the markdown table with the
 # contents of `filename.txt`.
