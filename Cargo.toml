@@ -1,9 +1,9 @@
 [package]
 name = "gh-stack"
-version = "0.1.7"
-authors = ["Timothy Andrew <mail@timothyandrew.net>"]
+version = "0.1.8"
+authors = ["Timothy Andrew <mail@timothyandrew.net>, Luis Ball <luqven@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/timothyandrew/gh-stack"
+repository = "https://github.com/luqven/gh-stack"
 readme = "README.md"
 edition = "2018"
 description = "Manage stacked PR workflows on Github"

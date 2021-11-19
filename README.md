@@ -20,11 +20,14 @@ It then looks for all PRs containing this containing this identifier and builds 
 
 ---
 
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Examples](#examples)
-- [Strategy](#strategy)
-- [Disclaimer](#disclaimer)
+- [gh-stack](#gh-stack)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Examples](#examples)
+  - [Strategy](#strategy)
+  - [Disclaimer](#disclaimer)
+  - [Contributors](#contributors)
+  - [Credits](#credits)
 
 ## Installation
 
@@ -46,11 +49,20 @@ $ cd gh-stack
 $ cargo install --force --path .
 ```
 
+```bash
+# Required.
+# Make sure to give your token read/write access to repositories you want to manage.
+$ export GHSTACK_OAUTH_TOKEN='<personal access token>'
+# Optional, but recommended.
+# If you don't supply this environment variable, you have to pass the `--repository` or `-r` flag to `gh-stack` commands.
+$ export GHSTACK_TARGET_REPOSITORY='<github repository name>'
+```
+
+You can also store these tokens in a file named `.gh-stack.env` in the project root.
+
 ## Usage
 
 ```bash
-$ export GHSTACK_OAUTH_TOKEN='<personal access token>'
-
 $ gh-stack
 
 USAGE:
@@ -65,18 +77,16 @@ SUBCOMMANDS:
     log           Print a list of all pull requests in a stack to STDOUT
     rebase        Print a bash script to STDOUT that can rebase/update the stack (with a little help)
 
-# Print a description of the stack to stdout.
+# Print a description of the stack to stdout. for a specific repository.
 $ gh-stack log 'stack-identifier'
 
-# Same as above, but for a specific repository.
-$ gh-stack log 'stack-identifier' -r 'repo-name'
-
-# Idempotently add a markdown table summarizing the stack
-# to the description of each PR in the stack.
+# # Idempotently add a markdown table summarizing the stack
+# to the description of each PR in the stack for a specific repository.
 $ gh-stack annotate 'stack-identifier'
 
-# Same as above, but for a specific repository.
-$ gh-stack annotate 'stack-identifier' -r  'repo-name'
+# Same as above, but precede the markdown table with the
+# contents of `filename.txt`.
+$ gh-stack annotate 'stack-identifier' -p filename.txt
 
 # Same as above, but precede the markdown table with the
 # contents of `filename.txt`.
@@ -193,7 +203,7 @@ _This is a quick overview of the ways this tool could be used in practice._
 8. Use the `autorebase` subcommand to fix this inconsistency (it requires a path to a local checkout of the repository):
 
    ```bash
-   $ gh-stack autorebase --repo /tmp/test EXAMPLE-13799
+   $ gh-stack autorebase --project /tmp/test EXAMPLE-13799
    Checking out Commit { id: 803101159653bf4bf92bf098e577abc436458b17, summary: "initial commit" }
 
    Working on PR: "first"

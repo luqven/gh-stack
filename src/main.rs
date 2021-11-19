@@ -115,7 +115,12 @@ async fn build_pr_stack_for_repo(
     credentials: &Credentials,
     exclude: Vec<String>,
 ) -> Result<FlatDep, Box<dyn Error>> {
-    let prs = api::search::fetch_matching_pull_requests_from_repository(pattern, repository, &credentials).await?;
+    let prs = api::search::fetch_matching_pull_requests_from_repository(
+        pattern,
+        repository,
+        &credentials,
+    )
+    .await?;
 
     let prs = prs
         .into_iter()
@@ -138,7 +143,7 @@ fn get_excluded(m: &ArgMatches) -> Vec<String> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    dotenv::from_filename(".gh-stack").ok();
+    dotenv::from_filename(".gh-stack.env").ok();
 
     let token = env::var("GHSTACK_OAUTH_TOKEN").expect("You didn't pass `GHSTACK_OAUTH_TOKEN`");
     let credentials = Credentials::new(&token);
@@ -147,19 +152,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match matches.subcommand() {
         ("annotate", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-            // If no repository is specified, use build_pr_stack. Otherwise, use
-            // build_pr_stack_for_repo.
-            let stack = if m.value_of("repository").is_none() {
-                build_pr_stack(identifier, &credentials, get_excluded(m)).await?
-            } else {
-                let repository = m.value_of("repository").unwrap();
-                println!(
-                    "Searching for {} identifier in {} repo",
-                    style(identifier).bold(),
-                    style(repository).bold()
+
+            // store the value of GHSTACK_TARGET_REPOSITORY
+            let repository = env::var("GHSTACK_TARGET_REPOSITORY").unwrap_or_default();
+            // replace it with the -r argument value if set
+            let repository = m.value_of("repository").unwrap_or(&repository);
+            // if repository is still unset, throw an error
+            if repository.is_empty() {
+                panic!(
+                    "You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY"
                 );
-                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m)).await?
-            };
+            }
+
+            println!(
+                "Searching for {} identifier in {} repo",
+                style(identifier).bold(),
+                style(repository).bold()
+            );
+
+            let stack =
+                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
+                    .await?;
+
             let table = markdown::build_table(&stack, identifier, m.value_of("prelude"));
 
             for (pr, _) in stack.iter() {
@@ -175,19 +189,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ("log", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
 
-            // If no repository is specified, use build_pr_stack. Otherwise, use
-            // build_pr_stack_for_repo.
-            let stack = if m.value_of("repository").is_none() {
-                build_pr_stack(identifier, &credentials, get_excluded(m)).await?
-            } else {
-                let repository = m.value_of("repository").unwrap();
-                println!(
-                    "Searching for {} identifier in {} repo",
-                    style(identifier).bold(),
-                    style(repository).bold()
+            // store the value of GHSTACK_TARGET_REPOSITORY
+            let repository = env::var("GHSTACK_TARGET_REPOSITORY").unwrap_or_default();
+            // replace it with the -r argument value if set
+            let repository = m.value_of("repository").unwrap_or(&repository);
+            // if repository is still unset, throw an error
+            if repository.is_empty() {
+                panic!(
+                    "You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY"
                 );
-                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m)).await?
-            };
+            }
+
+            println!(
+                "Searching for {} identifier in {} repo",
+                style(identifier).bold(),
+                style(repository).bold()
+            );
+            let stack =
+                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
+                    .await?;
 
             for (pr, maybe_parent) in stack {
                 match maybe_parent {
@@ -214,15 +234,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         ("autorebase", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-            // Log an error if repository is not specified.
-            m.value_of("repository").expect("The --repository argument is required.");
-            let repository = m.value_of("repository").unwrap();
+
+            // store the value of GHSTACK_TARGET_REPOSITORY
+            let repository = env::var("GHSTACK_TARGET_REPOSITORY").unwrap_or_default();
+            // replace it with the -r argument value if set
+            let repository = m.value_of("repository").unwrap_or(&repository);
+            // if repository is still unset, throw an error
+            if repository.is_empty() {
+                panic!(
+                    "You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY"
+                );
+            }
+
             println!(
                 "Searching for {} identifier in {} repo",
                 style(identifier).bold(),
                 style(repository).bold()
             );
-            let stack = build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m)).await?;
+            let stack =
+                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
+                    .await?;
 
             let project = m
                 .value_of("project")
@@ -233,8 +264,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let remote = m.value_of("origin").unwrap_or("origin");
             let remote = project.find_remote(remote).unwrap();
 
-            git::perform_rebase(stack, &project, remote.name().unwrap(), m.value_of("boundary"))
-                .await?;
+            git::perform_rebase(
+                stack,
+                &project,
+                remote.name().unwrap(),
+                m.value_of("boundary"),
+            )
+            .await?;
             println!("All done!");
         }
 
