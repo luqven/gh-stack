@@ -1,6 +1,6 @@
 use std::fs;
 
-use crate::api::{PullRequestReviewState, PullRequestStatus};
+use crate::api::PullRequestStatus;
 use crate::graph::FlatDep;
 
 pub fn build_table(deps: &FlatDep, title: &str, prelude_path: Option<&str>) -> String {
@@ -26,22 +26,9 @@ pub fn build_table(deps: &FlatDep, title: &str, prelude_path: Option<&str>) -> S
     out.push_str("|:--:|:------|:-------|:-------------:|\n");
 
     for (node, parent) in deps {
-        let review_state = match node.review_state() {
-            PullRequestReviewState::APPROVED => "**Approved**",
-            PullRequestReviewState::MERGED => "**Merged**",
-            PullRequestReviewState::PENDING => "Pending",
-            PullRequestReviewState::CHANGES_REQUESTED => "Changes requested",
-            PullRequestReviewState::DISMISSED => "Dismissed",
-            PullRequestReviewState::COMMENTED => "Commented",
-        };
-
-        let review_state = if node.review_state() != PullRequestReviewState::MERGED
-            && *node.state() == PullRequestStatus::Closed
-        {
-            "**Closed**"
-        } else {
-            review_state
-        };
+        let badge = "![](https://img.shields.io/github/pulls/detail/state/luqven/gh-stack/{pr_number}?label=%20)".replace("{pr_number}", &node.number().to_string());
+        let badge = &format!("{}", &badge);
+        let review_state = badge;
 
         let row = match (node.state(), parent) {
             (_, None) => format!(
