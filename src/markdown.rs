@@ -1,6 +1,6 @@
 use std::fs;
 
-use crate::api::PullRequestStatus;
+use crate::api::{PullRequestReviewState, PullRequestStatus};
 use crate::graph::FlatDep;
 
 pub fn build_table(
@@ -31,12 +31,69 @@ pub fn build_table(
     out.push_str("|:--:|:------|:-------|:-------------:|\n");
 
     for (node, parent) in deps {
-        let badge =
-            "![](https://img.shields.io/github/pulls/detail/state/{repository}/{pr_number}?label=%20)"
-                .replace("{repository}", repository)
-                .replace("{pr_number}", &node.number().to_string());
-        let badge = &format!("{}", &badge);
-        let review_state = badge;
+        let review_state = match node.review_state() {
+            PullRequestReviewState::APPROVED => {
+                format!(
+                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                    repository,
+                    &node.number().to_string(),
+                    "Approved"
+                )
+            }
+            PullRequestReviewState::MERGED => {
+                format!(
+                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                    repository,
+                    &node.number().to_string(),
+                    "%20"
+                )
+            }
+            PullRequestReviewState::PENDING => {
+                format!(
+                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                    repository,
+                    &node.number().to_string(),
+                    "Pending"
+                )
+            }
+            PullRequestReviewState::CHANGES_REQUESTED => {
+                format!(
+                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                    repository,
+                    &node.number().to_string(),
+                    "Changes Requested"
+                )
+            }
+            PullRequestReviewState::DISMISSED => {
+                format!(
+                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                    repository,
+                    &node.number().to_string(),
+                    "Dismissed"
+                )
+            }
+            PullRequestReviewState::COMMENTED => {
+                format!(
+                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                    repository,
+                    &node.number().to_string(),
+                    "Commented"
+                )
+            }
+        };
+
+        let review_state = if node.review_state() != PullRequestReviewState::MERGED
+            && *node.state() == PullRequestStatus::Closed
+        {
+            format!(
+                "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                repository,
+                &node.number().to_string(),
+                "Closed"
+            )
+        } else {
+            review_state
+        };
 
         let row = match (node.state(), parent) {
             (_, None) => format!(
