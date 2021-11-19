@@ -146,22 +146,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     dotenv::from_filename(".gh-stack.env").ok();
 
     let token = env::var("GHSTACK_OAUTH_TOKEN").expect("You didn't pass `GHSTACK_OAUTH_TOKEN`");
+    // store the value of GHSTACK_TARGET_REPOSITORY
+    let repository = env::var("GHSTACK_TARGET_REPOSITORY").unwrap_or_default();
     let credentials = Credentials::new(&token);
     let matches = clap().get_matches();
 
     match matches.subcommand() {
         ("annotate", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-
-            // store the value of GHSTACK_TARGET_REPOSITORY
-            let repository = env::var("GHSTACK_TARGET_REPOSITORY").unwrap_or_default();
             // replace it with the -r argument value if set
             let repository = m.value_of("repository").unwrap_or(&repository);
             // if repository is still unset, throw an error
             if repository.is_empty() {
-                panic!(
-                    "You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY"
+                let error = format!(
+                    "Invalid target repository {repo}. You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY", repo = repository
                 );
+                panic!("{}", error);
             }
 
             println!(
@@ -188,9 +188,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         ("log", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
-
-            // store the value of GHSTACK_TARGET_REPOSITORY
-            let repository = env::var("GHSTACK_TARGET_REPOSITORY").unwrap_or_default();
             // replace it with the -r argument value if set
             let repository = m.value_of("repository").unwrap_or(&repository);
             // if repository is still unset, throw an error
@@ -289,6 +286,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     - [x] Log a textual representation of the graph
     - [x] Automate rebase
     - [x] Better CLI args
+    - [x] PR status icons
     - [ ] Build status icons
     - [ ] Panic on non-200s
     */
