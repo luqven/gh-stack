@@ -30,12 +30,18 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .takes_value(true)
         .help("Exclude an issue from consideration (by number). Pass multiple times");
 
+    let ci = Arg::with_name("ci")
+        .long("ci")
+        .takes_value(false)
+        .help("Skip waiting for confirmation");
+
     let annotate = SubCommand::with_name("annotate")
         .about("Annotate the descriptions of all PRs in a stack with metadata about all PRs in the stack")
         .setting(AppSettings::ArgRequiredElseHelp)
         .arg(identifier.clone())
         .arg(exclude.clone())
         .arg(repository.clone())
+        .arg(ci.clone())
         .arg(Arg::with_name("prelude")
                 .long("prelude")
                 .short("p")
@@ -69,6 +75,7 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .setting(AppSettings::ArgRequiredElseHelp)
         .arg(exclude.clone())
         .arg(repository.clone())
+        .arg(ci.clone())
         .arg(identifier.clone());
 
     let rebase = SubCommand::with_name("rebase")
@@ -154,6 +161,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match matches.subcommand() {
         ("annotate", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
+            // if ci flag is set, set ci to true
+            let ci = m.is_present("ci");
             // replace it with the -r argument value if set
             let repository = m.value_of("repository").unwrap_or(&repository);
             // if repository is still unset, throw an error
@@ -180,7 +189,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             for (pr, _) in stack.iter() {
                 println!("{}: {}", pr.number(), pr.title());
             }
-            loop_until_confirm("Going to update these PRs ☝️ ");
+            if ci {
+                println!("\nCI flag present, skipping confirmation...");
+            } else {
+                loop_until_confirm("Going to update these PRs ☝️ ");
+            }
 
             persist::persist(&stack, &table, &credentials).await?;
 
@@ -262,11 +275,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let remote = m.value_of("origin").unwrap_or("origin");
             let remote = project.find_remote(remote).unwrap();
 
+            // if ci flag is set, set ci to true
+            let ci = m.is_present("ci");
+
             git::perform_rebase(
                 stack,
                 &project,
                 remote.name().unwrap(),
                 m.value_of("boundary"),
+                ci
             )
             .await?;
             println!("All done!");

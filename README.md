@@ -101,6 +101,9 @@ $ gh-stack annotate 'stack-identifier' -p filename.txt
 # WARNING: This operation modifies local branches and force-pushes.
 $ gh-stack autorebase 'stack-identifier' -C /path/to/repo
 
+# Same as above, but skips confirmation step.
+$ gh-stack autorebase 'stack-identifier' -C /path/to/repo --ci
+
 # Emit a bash script that can update a stack in the case of conflicts.
 # WARNING: This script could potentially cause destructive behavior.
 $ gh-stack rebase 'stack-identifier'

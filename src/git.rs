@@ -148,6 +148,7 @@ pub async fn perform_rebase(
     repo: &Repository,
     remote: &str,
     boundary: Option<&str>,
+    ci: bool,
 ) -> Result<(), Box<dyn Error>> {
     let deps = deps
         .iter()
@@ -211,7 +212,11 @@ pub async fn perform_rebase(
     command.current_dir(repo_dir);
 
     println!("\n{:?}", push_refspecs);
-    loop_until_confirm("Going to push these refspecs ☝️ ");
+    if ci {
+        println!("\nCI flag present, skipping confirmation...");
+    } else {
+        loop_until_confirm("Going to push these refspecs ☝️ ");
+    }
 
     command.spawn()?.await?;
 
