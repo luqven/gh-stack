@@ -13,6 +13,6 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
       - name: Automatic Stacked PR Annotation
-        uses: luqven/annotate@0.1.3
+        uses: luqven/annotate@0.1.4
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
