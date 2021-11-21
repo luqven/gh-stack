@@ -1,4 +1,4 @@
-name: Automatic Stacked PR Annotation
+name: GH-Stack Annotate
 on:
   issue_comment:
     types: [created]
