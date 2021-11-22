@@ -6,13 +6,19 @@ jobs:
   annotate:
     name: Annotate
     if: github.event.issue.pull_request != '' && contains(github.event.comment.body, '/annotate')
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout the latest code
         uses: actions/checkout@v2
         with:
           token: ${{ secrets.PAT }}
+      - name: Install GitHub CLI
+        run: |
+          brew update
+          brew install jq
+          brew install gh-stack
       - name: Automatic Stacked PR Annotation
-        uses: luqven/annotate@0.1.9
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          export PR_TITLE_FULL=$(jq -r ".pull_request.title" "$GITHUB_EVENT_PATH")
+          export PR_TITLE=$(echo "$PR_TITLE_FULL" | cut -d "]" -f 1)
+          gh-stack annotate $PR_TITLE --ci
