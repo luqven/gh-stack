@@ -12,10 +12,10 @@ jobs:
         uses: actions/checkout@v2
         with:
           token: ${{ secrets.PAT }}
-      - name: Install GitHub CLI
+      - name: Install the dependencies
         run: |
           brew update
-          brew install jq
+          brew tap luqven/gh-stack
           brew install gh-stack
       - name: Automatic Stacked PR Annotation
         run: |
