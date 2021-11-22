@@ -19,6 +19,9 @@ jobs:
           brew install gh-stack
       - name: Automatic Stacked PR Annotation
         run: |
-          export PR_TITLE_FULL=$(jq -r ".pull_request.title" "$GITHUB_EVENT_PATH")
-          export PR_TITLE=$(echo "$PR_TITLE_FULL" | cut -d "]" -f 1)
+          set -e
+          PR_TITLE_FULL=$(jq -r ".pull_request.title" "$GITHUB_EVENT_PATH")
+          PR_TITLE=$(echo "$PR_TITLE_FULL" | cut -d "]" -f 1)
+          echo $PR_TITLE_FULL
+          echo $PR_TITLE
           gh-stack annotate $PR_TITLE --ci
