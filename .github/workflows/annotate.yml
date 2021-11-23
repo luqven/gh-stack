@@ -23,4 +23,5 @@ jobs:
           GHSTACK_OAUTH_TOKEN: ${{ secrets.PAT }}
         run: |
           PR_TITLE=$(echo "$PR_TITLE" | cut -d "]" -f 1)
+          PR_TITLE=$(echo $PR_TITLE | sed 's/[][]//g')
           gh-stack annotate "$PR_TITLE" --ci
