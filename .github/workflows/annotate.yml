@@ -16,9 +16,11 @@ jobs:
         run: |
           brew tap luqven/gh-stack
           brew install gh-stack
-      - name: Automatic Stacked PR Annotation
+      - name: Annotate the pull request
         run: |
-          echo $PR_TITLE
-          gh-stack annotate $PR_TITLE --ci
+          PR_TITLE=$(echo "$PR_TITLE" | cut -d "]" -f 1)
+          echo "Annotating $PR_TITLE in $REPO_NAME"
+          gh-stack annotate "$PR_TITLE" -r "$REPO_NAME" --ci
         env:
           PR_TITLE: ${{ github.event.issue.title }}
+          REPO_NAME: luqven/gh-stack
