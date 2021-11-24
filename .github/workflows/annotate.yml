@@ -22,6 +22,4 @@ jobs:
           GHSTACK_TARGET_REPOSITORY: luqven/gh-stack
           GHSTACK_OAUTH_TOKEN: ${{ secrets.PAT }}
         run: |
-          PR_TITLE=$(echo "$PR_TITLE" | cut -d "]" -f 1)
-          PR_TITLE=$(echo $PR_TITLE | sed 's/[][]//g')
-          gh-stack annotate "$PR_TITLE" --ci
+          gh-stack annotate "$PR_TITLE" --prefix '[]' --ci
