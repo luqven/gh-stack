@@ -27,17 +27,24 @@ fn safe_replace(body: &str, table: &str) -> String {
     }
 }
 
-fn remove_title_prefixes(row: String) -> String {
-    // TODO: Make this configurable
-    let regex = Regex::new(r"\[[^\]]+\]\s*").unwrap();
-    regex.replace_all(&row, "").into_owned()
+fn remove_title_prefixes(row: String, prefix: &str) -> String {
+    let prefix = String::from(prefix);
+    let prefix_1 = &prefix[0..2];
+    let prefix_2 = &prefix[2..4];
+    let regex_str = format!(r"{}[^\]]+{}\s*", prefix_1, prefix_2);
+    let regex = Regex::new(&regex_str).unwrap();
+    return regex.replace_all(&row, "").into_owned();
 }
 
-
-pub async fn persist(prs: &FlatDep, table: &str, c: &Credentials) -> Result<(), Box<dyn Error>> {
+pub async fn persist(
+    prs: &FlatDep,
+    table: &str,
+    c: &Credentials,
+    prefix: &str,
+) -> Result<(), Box<dyn Error>> {
     let futures = prs.iter().map(|(pr, _)| {
         let body = table.replace(&pr.title()[..], &format!("👉 {}", pr.title())[..]);
-        let body = remove_title_prefixes(body);
+        let body = remove_title_prefixes(body, prefix);
         let description = safe_replace(pr.body(), body.as_ref());
         pull_request::update_description(description, pr.clone(), c)
     });
