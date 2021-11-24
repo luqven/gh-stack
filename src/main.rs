@@ -1,6 +1,7 @@
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use console::style;
 use git2::Repository;
+use regex::Regex;
 use std::env;
 use std::error::Error;
 use std::rc::Rc;
@@ -35,6 +36,11 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .takes_value(false)
         .help("Skip waiting for confirmation");
 
+    let prefix = Arg::with_name("prefix")
+        .long("prefix")
+        .takes_value(true)
+        .help("PR title prefix identifier to remove from the title");
+
     let annotate = SubCommand::with_name("annotate")
         .about("Annotate the descriptions of all PRs in a stack with metadata about all PRs in the stack")
         .setting(AppSettings::ArgRequiredElseHelp)
@@ -42,6 +48,7 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .arg(exclude.clone())
         .arg(repository.clone())
         .arg(ci.clone())
+        .arg(prefix.clone())
         .arg(Arg::with_name("prelude")
                 .long("prelude")
                 .short("p")
@@ -148,6 +155,12 @@ fn get_excluded(m: &ArgMatches) -> Vec<String> {
     }
 }
 
+fn remove_title_prefixes(title: String, prefix: &str) -> String {
+    let regex = Regex::new(&format!("[{}]", prefix).to_string()).unwrap();
+    let result = regex.replace_all(&title, "").into_owned();
+    return result;
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv::from_filename(".gh-stack.env").ok();
@@ -161,6 +174,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match matches.subcommand() {
         ("annotate", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
+            let prefix = m.value_of("prefix").unwrap_or("[]");
+            let prefix = regex::escape(prefix);
             // if ci flag is set, set ci to true
             let ci = m.is_present("ci");
             // replace it with the -r argument value if set
@@ -173,18 +188,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 panic!("{}", error);
             }
 
+            let identifier = remove_title_prefixes(identifier.to_string(), &prefix);
+
             println!(
                 "Searching for {} identifier in {} repo",
-                style(identifier).bold(),
+                style(&identifier).bold(),
                 style(repository).bold()
             );
 
             let stack =
-                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
+                build_pr_stack_for_repo(&identifier, repository, &credentials, get_excluded(m))
                     .await?;
 
             let table =
-                markdown::build_table(&stack, identifier, m.value_of("prelude"), repository);
+                markdown::build_table(&stack, &identifier, m.value_of("prelude"), repository);
 
             for (pr, _) in stack.iter() {
                 println!("{}: {}", pr.number(), pr.title());
@@ -195,7 +212,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 loop_until_confirm("Going to update these PRs ☝️ ");
             }
 
-            persist::persist(&stack, &table, &credentials).await?;
+            persist::persist(&stack, &table, &credentials, &prefix).await?;
 
             println!("Done!");
         }
@@ -283,7 +300,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &project,
                 remote.name().unwrap(),
                 m.value_of("boundary"),
-                ci
+                ci,
             )
             .await?;
             println!("All done!");
