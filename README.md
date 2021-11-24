@@ -89,6 +89,9 @@ $ gh-stack annotate 'stack-identifier'
 # Same as above, but for the specified repository.
 $ gh-stack annotate 'stack-identifier' -r '<some/repo>'
 
+# Same as above, but with a custom title prefix.
+$ gh-stack annotate 'stack-identifier' -r '<some/repo>' --prefix '#'
+
 # Same as above, but precede the markdown table with the
 # contents of `filename.txt`.
 $ gh-stack annotate 'stack-identifier' -p filename.txt
