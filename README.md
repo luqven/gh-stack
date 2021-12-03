@@ -1,8 +1,10 @@
 # gh-stack
 
+> This README and tool were originally written by [@timothyandrew](https://github.com/timothyandrew/gh-stack). I highly recommend reading his blog post on sacked-PR workflows [here](https://0xc0d1.com/blog/git-stack/).
+
 I use this tool to help managed stacked pull requests on Github, which are notoriously difficult to manage manually. Here are a few examples:
 
-- https://unhashable.com/stacked-pull-requests-keeping-github-diffs-small
+- https://0xc0d1.com/blog/git-stack/
 - https://stackoverflow.com/questions/26619478/are-dependent-pull-requests-in-github-possible
 - https://gist.github.com/Jlevyd15/66743bab4982838932dda4f13f2bd02a
 
@@ -12,7 +14,9 @@ This tool assumes that:
 - All PRs in the stack live in a single GitHub repository.
 - All remote branches that these PRs represent have local branches named identically.
 
-It then looks for all PRs containing this containing this identifier and builds a dependency graph in memory. This can technically support a "branched stack" instead of a single chain, but I haven't really tried the latter style. With this graph built up, the tool can:
+It then looks for all PRs containing this containing this identifier and builds a dependency graph in memory.
+
+With this graph built up, the tool can:
 
 - Add a markdown table to the PR description (idempotently) of each PR in the stack describing _all_ PRs in the stack.
 - Log a simple list of all PRs in the stack (+ dependencies) to stdout.
@@ -32,21 +36,22 @@ It then looks for all PRs containing this containing this identifier and builds 
 ## Installation
 
 ```bash
-# Install Rust
-$ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Configure `PATH`
-$ export PATH="$HOME/.cargo/bin:$PATH"
-
-# Install `gh-stack`
-$ cargo install gh-stack
+brew tap luqven/gh-stack
+brew install gh-stack
 ```
 
 If you cloned this repository, you can build and install from source with:
 
 ```bash
-$ cd gh-stack
-$ cargo install --force --path .
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Configure `PATH`
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Install `gh-stack`
+cd gh-stack
+cargo install --force --path .
 ```
 
 ## Usage
