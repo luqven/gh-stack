@@ -12,17 +12,17 @@ To release a new version of the project, you need to:
     version = "0.1.0" // <-- Update this to next version
     // ...
    ```
-2. Create a release commit with the changes and tag it with the new version number
+2. Create `target/release/` folder with the binary
+   ```bash
+   cargo build --release
+   ```
+3. Create a release commit with the changes and tag it with the new version number
    ```bash
    git commit -m "chore: release v0.1.0" && git tag v0.1.0
    ```
-3. Push the commit and tag to the remote repository
+4. Push the commit and tag to the remote repository
    ```bash
    git push origin master && git push origin master --tags
-   ```
-4. Create `target/release/` folder with the binary
-   ```bash
-   cargo build --release
    ```
 5. Create a `.tar.gz` archive of the release bundle that's compatible with Brew and GitHub Releases.
    ```bash
