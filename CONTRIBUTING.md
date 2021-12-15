@@ -18,6 +18,8 @@ To release a new version of the project, you need to:
    ```
 3. Create a release commit with the changes and tag it with the new version number
    ```bash
+   git add Cargo.toml
+   git add Cargo.lock
    git commit -m "chore: release v0.1.0" && git tag v0.1.0
    ```
 4. Push the commit and tag to the remote repository
