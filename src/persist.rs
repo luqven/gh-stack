@@ -27,13 +27,17 @@ fn safe_replace(body: &str, table: &str) -> String {
     }
 }
 
+/**
+ * Remove title prefixes from markdown table
+ */
 fn remove_title_prefixes(row: String, prefix: &str) -> String {
     let prefix = String::from(prefix);
     let prefix_1 = &prefix[0..2];
     let prefix_2 = &prefix[2..4];
-    let regex_str = format!(r"{}[^\]]+{}\s*", prefix_1, prefix_2);
+    // Regex removes the prefix from the title and removes surrounding whitespace
+    let regex_str = format!(r"\s*{}[^\]]+{}\s*", prefix_1, prefix_2);
     let regex = Regex::new(&regex_str).unwrap();
-    return regex.replace_all(&row, "").into_owned();
+    return regex.replace_all(&row, "").trim().to_string().to_owned();
 }
 
 pub async fn persist(
