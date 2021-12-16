@@ -47,7 +47,7 @@ To release a new version of the project, you need to:
    # homebrew-gh-stack repository
    # /Formula/gh-stack.rb
    class GhStack < Formula
-      desc "Cross-platform Text Expander written in Rust"
+      desc "Manage GH PR stacks via the command line"
       homepage "https://github.com/luqven/gh-stack"
       version "0.1.0"
       url "https://github.com/luqven/gh-stack/releases/download/#{version}/gh-stack-mac.tar.gz"
