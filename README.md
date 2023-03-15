@@ -13,6 +13,9 @@ This tool assumes that:
 - All PRs in a single "stack" all have a unique identifier in their title (I typically use a Jira ticket number for this).
 - All PRs in the stack live in a single GitHub repository.
 - All remote branches that these PRs represent have local branches named identically.
+- Your PRs are publicly viewable by all GitHub users.
+   - This assumption is due to how the Markdown table is uses https://shields.io to render badges that auto-update based on your PR status.
+      - example URL: https://img.shields.io/github/pulls/detail/state/{{your-user-or-org}}/{{your-repository}}/{{the-pr-number}}
 
 It then looks for all PRs containing this containing this identifier and builds a dependency graph in memory.
 
