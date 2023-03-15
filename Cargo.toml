@@ -24,3 +24,9 @@ dialoguer = "0.6.2"
 clap = "2.33"
 console = "0.11"
 dotenv = "0.15"
+
+[package.metadata.nix]
+app = true
+build = true
+library = true
+systems = ["x86_64-linux"] # TODO: add more
