@@ -218,7 +218,7 @@ pub async fn perform_rebase(
         loop_until_confirm("Going to push these refspecs ☝️ ");
     }
 
-    command.spawn()?.await?;
+    command.spawn()?.wait().await?;
 
     println!("\nUpdating local branches so they point to the new stack.\n");
     for (branch, target) in update_local_branches_to {
