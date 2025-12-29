@@ -8,6 +8,7 @@ pub fn build_table(
     title: &str,
     prelude_path: Option<&str>,
     repository: &str,
+    use_badges: bool,
 ) -> String {
     let is_complete = deps
         .iter()
@@ -27,89 +28,104 @@ pub fn build_table(
         out.push('\n');
     }
 
-    out.push_str("| PR | Title | Status |  Merges Into  |\n");
-    out.push_str("|:--:|:------|:-------|:-------------:|\n");
+    if use_badges {
+        out.push_str("| PR | Title | Status | Merges Into |\n");
+        out.push_str("|:--:|:------|:-------|:-----------:|\n");
+    } else {
+        out.push_str("| PR | Title | Merges Into |\n");
+        out.push_str("|:--:|:------|:-----------:|\n");
+    }
 
     for (node, parent) in deps {
-        let review_state = match node.review_state() {
-            PullRequestReviewState::APPROVED => {
-                format!(
-                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
-                    repository,
-                    &node.number().to_string(),
-                    "Approved"
-                )
-            }
-            PullRequestReviewState::MERGED => {
-                format!(
-                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
-                    repository,
-                    &node.number().to_string(),
-                    "%20"
-                )
-            }
-            PullRequestReviewState::PENDING => {
-                format!(
-                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
-                    repository,
-                    &node.number().to_string(),
-                    "Pending"
-                )
-            }
-            PullRequestReviewState::CHANGES_REQUESTED => {
-                format!(
-                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
-                    repository,
-                    &node.number().to_string(),
-                    "Changes Requested"
-                )
-            }
-            PullRequestReviewState::DISMISSED => {
-                format!(
-                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
-                    repository,
-                    &node.number().to_string(),
-                    "Dismissed"
-                )
-            }
-            PullRequestReviewState::COMMENTED => {
-                format!(
-                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
-                    repository,
-                    &node.number().to_string(),
-                    "Commented"
-                )
-            }
-        };
+        let review_state = if use_badges {
+            let state = match node.review_state() {
+                PullRequestReviewState::APPROVED => {
+                    format!(
+                        "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                        repository,
+                        &node.number().to_string(),
+                        "Approved"
+                    )
+                }
+                PullRequestReviewState::MERGED => {
+                    format!(
+                        "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                        repository,
+                        &node.number().to_string(),
+                        "%20"
+                    )
+                }
+                PullRequestReviewState::PENDING => {
+                    format!(
+                        "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                        repository,
+                        &node.number().to_string(),
+                        "Pending"
+                    )
+                }
+                PullRequestReviewState::CHANGES_REQUESTED => {
+                    format!(
+                        "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                        repository,
+                        &node.number().to_string(),
+                        "Changes Requested"
+                    )
+                }
+                PullRequestReviewState::DISMISSED => {
+                    format!(
+                        "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                        repository,
+                        &node.number().to_string(),
+                        "Dismissed"
+                    )
+                }
+                PullRequestReviewState::COMMENTED => {
+                    format!(
+                        "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                        repository,
+                        &node.number().to_string(),
+                        "Commented"
+                    )
+                }
+            };
 
-        let review_state = if node.review_state() != PullRequestReviewState::MERGED
-            && *node.state() == PullRequestStatus::Closed
-        {
-            format!(
-                "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
-                repository,
-                &node.number().to_string(),
-                "Closed"
-            )
+            if node.review_state() != PullRequestReviewState::MERGED
+                && *node.state() == PullRequestStatus::Closed
+            {
+                format!(
+                    "![](https://img.shields.io/github/pulls/detail/state/{}/{}?label={})",
+                    repository,
+                    &node.number().to_string(),
+                    "Closed"
+                )
+            } else {
+                state
+            }
         } else {
-            review_state
+            String::new()
         };
 
-        let row = match (node.state(), parent) {
-            (_, None) => format!(
-                "|#{}|{}|{}|{}|\n",
-                node.number(),
-                node.title(),
-                review_state,
-                "-"
-            ),
-            (_, Some(parent)) => format!(
-                "|#{}|{}|{}|#{}|\n",
-                node.number(),
-                node.title(),
-                review_state,
-                parent.number(),
-            ),
+        let row = if use_badges {
+            match parent {
+                None => format!("|#{}|{}|{}|-|\n", node.number(), node.title(), review_state),
+                Some(parent) => format!(
+                    "|#{}|{}|{}|#{}|\n",
+                    node.number(),
+                    node.title(),
+                    review_state,
+                    parent.number()
+                ),
+            }
+        } else {
+            match parent {
+                None => format!("|#{}|{}|-|\n", node.number(), node.title()),
+                Some(parent) => format!(
+                    "|#{}|{}|#{}|\n",
+                    node.number(),
+                    node.title(),
+                    parent.number()
+                ),
+            }
         };
 
         out.push_str(&row);
@@ -158,7 +174,7 @@ mod tests {
         );
         let deps: FlatDep = vec![(pr, None)];
 
-        let table = build_table(&deps, "JIRA-123", None, "user/repo");
+        let table = build_table(&deps, "JIRA-123", None, "user/repo", false);
         insta::assert_snapshot!(table);
     }
 
@@ -198,7 +214,7 @@ mod tests {
             (pr3.clone(), Some(pr2.clone())),
         ];
 
-        let table = build_table(&deps, "STACK-456", None, "org/project");
+        let table = build_table(&deps, "STACK-456", None, "org/project", false);
         insta::assert_snapshot!(table);
     }
 
@@ -215,7 +231,7 @@ mod tests {
         );
         let deps: FlatDep = vec![(pr, None)];
 
-        let table = build_table(&deps, "DRAFT-TEST", None, "user/repo");
+        let table = build_table(&deps, "DRAFT-TEST", None, "user/repo", false);
         insta::assert_snapshot!(table);
     }
 
@@ -232,7 +248,7 @@ mod tests {
         );
         let deps: FlatDep = vec![(pr, None)];
 
-        let table = build_table(&deps, "CLOSED-TEST", None, "user/repo");
+        let table = build_table(&deps, "CLOSED-TEST", None, "user/repo", false);
         insta::assert_snapshot!(table);
     }
 
@@ -249,7 +265,7 @@ mod tests {
         );
         let deps: FlatDep = vec![(pr, None)];
 
-        let table = build_table(&deps, "MERGED-TEST", None, "user/repo");
+        let table = build_table(&deps, "MERGED-TEST", None, "user/repo", false);
         insta::assert_snapshot!(table);
     }
 
@@ -276,7 +292,7 @@ mod tests {
 
         let deps: FlatDep = vec![(pr1.clone(), None), (pr2.clone(), Some(pr1.clone()))];
 
-        let table = build_table(&deps, "COMPLETE-STACK", None, "user/repo");
+        let table = build_table(&deps, "COMPLETE-STACK", None, "user/repo", false);
         insta::assert_snapshot!(table);
     }
 
@@ -316,7 +332,74 @@ mod tests {
             (pr3.clone(), Some(pr2.clone())),
         ];
 
-        let table = build_table(&deps, "MIXED-STACK", None, "org/repo");
+        let table = build_table(&deps, "MIXED-STACK", None, "org/repo", false);
+        insta::assert_snapshot!(table);
+    }
+
+    #[test]
+    fn test_build_table_with_badges() {
+        let pr1 = make_pr(
+            1,
+            "feature-1",
+            "main",
+            "Base feature",
+            PullRequestStatus::Open,
+            false,
+            None,
+        );
+        let pr2 = make_pr(
+            2,
+            "feature-2",
+            "feature-1",
+            "Second feature",
+            PullRequestStatus::Open,
+            false,
+            None,
+        );
+
+        let deps: FlatDep = vec![(pr1.clone(), None), (pr2.clone(), Some(pr1.clone()))];
+
+        let table = build_table(&deps, "BADGES-TEST", None, "org/project", true);
+        insta::assert_snapshot!(table);
+    }
+
+    #[test]
+    fn test_build_table_with_badges_mixed_states() {
+        let pr1 = make_pr(
+            1,
+            "feature-1",
+            "main",
+            "Merged base",
+            PullRequestStatus::Closed,
+            false,
+            Some("2024-01-15T10:00:00Z".to_string()),
+        );
+        let pr2 = make_pr(
+            2,
+            "feature-2",
+            "feature-1",
+            "Open follow-up",
+            PullRequestStatus::Open,
+            false,
+            None,
+        );
+        let pr3 = make_pr(
+            3,
+            "feature-3",
+            "feature-2",
+            "Draft WIP",
+            PullRequestStatus::Open,
+            true,
+            None,
+        );
+
+        let deps: FlatDep = vec![
+            (pr1.clone(), None),
+            (pr2.clone(), Some(pr1.clone())),
+            (pr3.clone(), Some(pr2.clone())),
+        ];
+
+        let table = build_table(&deps, "BADGES-MIXED", None, "org/repo", true);
         insta::assert_snapshot!(table);
     }
 }

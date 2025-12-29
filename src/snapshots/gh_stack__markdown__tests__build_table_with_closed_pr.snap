@@ -3,6 +3,6 @@ source: src/markdown.rs
 expression: table
 ---
 ### ✅ Stacked PR Chain: CLOSED-TEST
-| PR | Title | Status |  Merges Into  |
-|:--:|:------|:-------|:-------------:|
-|#1|~~Completed feature~~|![](https://img.shields.io/github/pulls/detail/state/user/repo/1?label=Closed)|-|
+| PR | Title | Merges Into |
+|:--:|:------|:-----------:|
+|#1|~~Completed feature~~|-|

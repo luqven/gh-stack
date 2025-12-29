@@ -1,0 +1,9 @@
+---
+source: src/markdown.rs
+expression: table
+---
+### Stacked PR Chain: BADGES-TEST
+| PR | Title | Status | Merges Into |
+|:--:|:------|:-------|:-----------:|
+|#1|Base feature|![](https://img.shields.io/github/pulls/detail/state/org/project/1?label=Pending)|-|
+|#2|Second feature|![](https://img.shields.io/github/pulls/detail/state/org/project/2?label=Pending)|#1|

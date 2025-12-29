@@ -3,7 +3,7 @@ source: src/markdown.rs
 expression: table
 ---
 ### ✅ Stacked PR Chain: COMPLETE-STACK
-| PR | Title | Status |  Merges Into  |
-|:--:|:------|:-------|:-------------:|
-|#1|~~First~~|![](https://img.shields.io/github/pulls/detail/state/user/repo/1?label=Closed)|-|
-|#2|~~Second~~|![](https://img.shields.io/github/pulls/detail/state/user/repo/2?label=Closed)|#1|
+| PR | Title | Merges Into |
+|:--:|:------|:-----------:|
+|#1|~~First~~|-|
+|#2|~~Second~~|#1|

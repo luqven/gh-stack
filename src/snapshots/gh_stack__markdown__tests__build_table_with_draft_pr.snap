@@ -3,6 +3,6 @@ source: src/markdown.rs
 expression: table
 ---
 ### Stacked PR Chain: DRAFT-TEST
-| PR | Title | Status |  Merges Into  |
-|:--:|:------|:-------|:-------------:|
-|#1|*(Draft) Work in progress*|![](https://img.shields.io/github/pulls/detail/state/user/repo/1?label=Pending)|-|
+| PR | Title | Merges Into |
+|:--:|:------|:-----------:|
+|#1|*(Draft) Work in progress*|-|

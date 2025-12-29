@@ -47,6 +47,35 @@ docs: update documentation
 chore: maintenance tasks
 ```
 
+## Stacked PRs
+
+When creating stacked PRs, use `gh-stack` to manage and annotate them:
+
+1. Create branches that build on each other:
+   ```bash
+   git checkout -b feat/my-feature-part1
+   # make changes, commit
+   git checkout -b feat/my-feature-part2
+   # make changes, commit
+   ```
+
+2. Push branches and create PRs with proper base branches:
+   ```bash
+   git push origin feat/my-feature-part1 feat/my-feature-part2
+   gh pr create --base master --head feat/my-feature-part1 --title "[STACK-ID] part 1"
+   gh pr create --base feat/my-feature-part1 --head feat/my-feature-part2 --title "[STACK-ID] part 2"
+   ```
+
+3. Annotate PRs with stack info:
+   ```bash
+   gh-stack annotate 'STACK-ID' -r 'luqven/gh-stack' --ci
+   ```
+
+4. After rebasing, update the stack:
+   ```bash
+   gh-stack autorebase 'STACK-ID' -r 'luqven/gh-stack' -C . --ci
+   ```
+
 ## Function Signatures
 
 Pass primitives directly, keep arg count low:
