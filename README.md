@@ -293,9 +293,36 @@ Use at your own risk (and make sure your git repository is backed up), especiall
 - I've been writing Rust for all of 3 weeks at this point.
 - The `autorebase` command is in an experimental state; there are possibly edge cases I haven't considered.
 
+## Releasing
+
+Releases are automated via GitHub Actions. To create a new release:
+
+```bash
+# Update version in Cargo.toml, then:
+git add Cargo.toml
+git commit -m "chore: release v0.x.0"
+git tag v0.x.0
+git push origin master v0.x.0
+```
+
+This triggers the release workflow which:
+1. Runs tests
+2. Builds universal macOS binary (x86_64 + arm64)
+3. Builds Linux binary
+4. Creates GitHub Release with binaries attached
+5. Opens PR to update the Homebrew formula
+
+Install via Homebrew:
+```bash
+brew tap luqven/gh-stack
+brew install gh-stack
+```
+
 ## Contributors
 
 Contributors are encouraged to submit pull requests to improve the tool. Please stick to semantic versioning and don't submit pull requests that break the tool.
+
+See [AGENTS.md](AGENTS.md) for coding guidelines.
 
 ## Credits
 

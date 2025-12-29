@@ -1,6 +1,6 @@
 [package]
 name = "gh-stack"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Timothy Andrew <mail@timothyandrew.net>, Luis Ball <luqven@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/luqven/gh-stack"
