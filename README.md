@@ -87,7 +87,7 @@ SUBCOMMANDS:
     annotate      Annotate the descriptions of all PRs in a stack with metadata about all PRs in the stack
     autorebase    Rebuild a stack based on changes to local branches and mirror these changes up to the remote
     land          Land a stack by squash-merging the topmost approved PR and closing the rest
-    log           Print a list of all pull requests in a stack to STDOUT
+    log           Print a visual tree of all pull requests in a stack
     rebase        Print a bash script to STDOUT that can rebase/update the stack (with a little help)
 
 # Print a description of the stack to stdout (auto-detects repository from git remote)
@@ -190,7 +190,21 @@ _This is a quick overview of the ways this tool could be used in practice._
 5. Log all PRs in the stack:
 
    ```bash
+   # Tree view (default)
    $ gh-stack log 'EXAMPLE-13799' -r 'example_user/example-repo'
+   ◉ third (current)
+   │ 2 hours ago
+   │
+   ◯ second
+   │ 2 hours ago
+   │
+   ◯ first
+   │ 2 hours ago
+   │
+   ◯ master
+
+   # Compact list view
+   $ gh-stack log 'EXAMPLE-13799' -r 'example_user/example-repo' --short
     #1: [EXAMPLE-13799] PR for branch `first` (Base)
     #2: [EXAMPLE-13799] PR for branch `second` (Merges into #1)
     #3: [EXAMPLE-13799] PR for branch `third` (Merges into #2)
