@@ -147,7 +147,15 @@ mod tests {
 
     #[test]
     fn test_build_table_single_pr() {
-        let pr = make_pr(1, "feature-1", "main", "Add new feature", PullRequestStatus::Open, false, None);
+        let pr = make_pr(
+            1,
+            "feature-1",
+            "main",
+            "Add new feature",
+            PullRequestStatus::Open,
+            false,
+            None,
+        );
         let deps: FlatDep = vec![(pr, None)];
 
         let table = build_table(&deps, "JIRA-123", None, "user/repo");
@@ -156,9 +164,33 @@ mod tests {
 
     #[test]
     fn test_build_table_linear_stack() {
-        let pr1 = make_pr(1, "feature-1", "main", "Base feature", PullRequestStatus::Open, false, None);
-        let pr2 = make_pr(2, "feature-2", "feature-1", "Second feature", PullRequestStatus::Open, false, None);
-        let pr3 = make_pr(3, "feature-3", "feature-2", "Third feature", PullRequestStatus::Open, false, None);
+        let pr1 = make_pr(
+            1,
+            "feature-1",
+            "main",
+            "Base feature",
+            PullRequestStatus::Open,
+            false,
+            None,
+        );
+        let pr2 = make_pr(
+            2,
+            "feature-2",
+            "feature-1",
+            "Second feature",
+            PullRequestStatus::Open,
+            false,
+            None,
+        );
+        let pr3 = make_pr(
+            3,
+            "feature-3",
+            "feature-2",
+            "Third feature",
+            PullRequestStatus::Open,
+            false,
+            None,
+        );
 
         let deps: FlatDep = vec![
             (pr1.clone(), None),
@@ -172,7 +204,15 @@ mod tests {
 
     #[test]
     fn test_build_table_with_draft_pr() {
-        let pr = make_pr(1, "wip-feature", "main", "Work in progress", PullRequestStatus::Open, true, None);
+        let pr = make_pr(
+            1,
+            "wip-feature",
+            "main",
+            "Work in progress",
+            PullRequestStatus::Open,
+            true,
+            None,
+        );
         let deps: FlatDep = vec![(pr, None)];
 
         let table = build_table(&deps, "DRAFT-TEST", None, "user/repo");
@@ -181,7 +221,15 @@ mod tests {
 
     #[test]
     fn test_build_table_with_closed_pr() {
-        let pr = make_pr(1, "old-feature", "main", "Completed feature", PullRequestStatus::Closed, false, None);
+        let pr = make_pr(
+            1,
+            "old-feature",
+            "main",
+            "Completed feature",
+            PullRequestStatus::Closed,
+            false,
+            None,
+        );
         let deps: FlatDep = vec![(pr, None)];
 
         let table = build_table(&deps, "CLOSED-TEST", None, "user/repo");
@@ -207,13 +255,26 @@ mod tests {
 
     #[test]
     fn test_build_table_all_closed_shows_checkmark() {
-        let pr1 = make_pr(1, "feature-1", "main", "First", PullRequestStatus::Closed, false, None);
-        let pr2 = make_pr(2, "feature-2", "feature-1", "Second", PullRequestStatus::Closed, false, None);
+        let pr1 = make_pr(
+            1,
+            "feature-1",
+            "main",
+            "First",
+            PullRequestStatus::Closed,
+            false,
+            None,
+        );
+        let pr2 = make_pr(
+            2,
+            "feature-2",
+            "feature-1",
+            "Second",
+            PullRequestStatus::Closed,
+            false,
+            None,
+        );
 
-        let deps: FlatDep = vec![
-            (pr1.clone(), None),
-            (pr2.clone(), Some(pr1.clone())),
-        ];
+        let deps: FlatDep = vec![(pr1.clone(), None), (pr2.clone(), Some(pr1.clone()))];
 
         let table = build_table(&deps, "COMPLETE-STACK", None, "user/repo");
         insta::assert_snapshot!(table);
@@ -230,8 +291,24 @@ mod tests {
             false,
             Some("2024-01-15T10:00:00Z".to_string()),
         );
-        let pr2 = make_pr(2, "feature-2", "feature-1", "Open follow-up", PullRequestStatus::Open, false, None);
-        let pr3 = make_pr(3, "feature-3", "feature-2", "Draft WIP", PullRequestStatus::Open, true, None);
+        let pr2 = make_pr(
+            2,
+            "feature-2",
+            "feature-1",
+            "Open follow-up",
+            PullRequestStatus::Open,
+            false,
+            None,
+        );
+        let pr3 = make_pr(
+            3,
+            "feature-3",
+            "feature-2",
+            "Draft WIP",
+            PullRequestStatus::Open,
+            true,
+            None,
+        );
 
         let deps: FlatDep = vec![
             (pr1.clone(), None),
