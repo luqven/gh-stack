@@ -46,8 +46,11 @@ Visualize your stack. [Learn more](docs/log.md)
 
 ```bash
 gh-stack log 'STACK-ID'
-gh-stack log 'STACK-ID' --short  # compact list view
+gh-stack log 'STACK-ID' --short   # compact list view
+gh-stack log 'STACK-ID' --status  # show CI/approval/merge status
 ```
+
+See also: [`gh-stack status`](docs/status.md) for detailed stack health indicators.
 
 <details>
 <summary>Example output</summary>
