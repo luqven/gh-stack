@@ -210,6 +210,34 @@ impl PullRequest {
         self.draft
     }
 
+    /// Get the SHA of the head commit (for check status lookups)
+    pub fn head_sha(&self) -> &str {
+        &self.head.sha
+    }
+
+    /// Get the raw title without markdown formatting
+    pub fn raw_title(&self) -> &str {
+        self.title.trim()
+    }
+
+    /// Convert API URL to HTML URL for display
+    ///
+    /// Transforms:
+    /// - `https://api.github.com/repos/owner/repo/pulls/123`
+    /// - to `https://github.com/owner/repo/pull/123`
+    ///
+    /// Also handles enterprise URLs:
+    /// - `https://api.github.mycompany.com/repos/org/repo/pulls/456`
+    /// - to `https://github.mycompany.com/org/repo/pull/456`
+    pub fn html_url(&self) -> String {
+        // Handle both github.com and enterprise URLs
+        // API URLs have "api." prefix and "/repos/" path
+        self.url
+            .replacen("api.", "", 1)
+            .replace("/repos/", "/")
+            .replace("/pulls/", "/pull/")
+    }
+
     pub async fn fetch_reviews(
         self,
         credentials: &Credentials,
@@ -241,4 +269,104 @@ pub async fn update_description(
     let request = api::base_patch_request(&client, c, pr.url()).json(&body);
     request.send().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_head_sha_accessor() {
+        let pr = PullRequest::new_for_test(
+            123,
+            "feature-branch",
+            "main",
+            "Test PR",
+            PullRequestStatus::Open,
+            false,
+            None,
+            vec![],
+        );
+        // Default test SHA is "abc123"
+        assert_eq!(pr.head_sha(), "abc123");
+    }
+
+    #[test]
+    fn test_html_url_conversion() {
+        let pr = PullRequest::new_for_test(
+            123,
+            "feature-branch",
+            "main",
+            "Test PR",
+            PullRequestStatus::Open,
+            false,
+            None,
+            vec![],
+        );
+        assert_eq!(pr.html_url(), "https://github.com/test/repo/pull/123");
+    }
+
+    #[test]
+    fn test_html_url_preserves_enterprise_domain() {
+        // Create a PR with enterprise URL
+        let pr = PullRequest {
+            id: 456,
+            number: 456,
+            head: PullRequestRef {
+                label: "user:feature".to_string(),
+                gitref: "feature".to_string(),
+                sha: "abc123".to_string(),
+            },
+            base: PullRequestRef {
+                label: "user:main".to_string(),
+                gitref: "main".to_string(),
+                sha: "def456".to_string(),
+            },
+            title: "Enterprise PR".to_string(),
+            url: "https://api.github.mycompany.com/repos/org/repo/pulls/456".to_string(),
+            body: None,
+            state: PullRequestStatus::Open,
+            merged_at: None,
+            updated_at: None,
+            draft: false,
+            reviews: vec![],
+        };
+        assert_eq!(
+            pr.html_url(),
+            "https://github.mycompany.com/org/repo/pull/456"
+        );
+    }
+
+    #[test]
+    fn test_raw_title_trims_whitespace() {
+        let pr = PullRequest::new_for_test(
+            1,
+            "feature",
+            "main",
+            "  Whitespace Title  ",
+            PullRequestStatus::Open,
+            false,
+            None,
+            vec![],
+        );
+        assert_eq!(pr.raw_title(), "Whitespace Title");
+    }
+
+    #[test]
+    fn test_raw_title_vs_title_for_draft() {
+        let pr = PullRequest::new_for_test(
+            1,
+            "feature",
+            "main",
+            "My Feature",
+            PullRequestStatus::Open,
+            true, // draft
+            None,
+            vec![],
+        );
+        // raw_title returns unformatted
+        assert_eq!(pr.raw_title(), "My Feature");
+        // title() adds draft formatting
+        assert_eq!(pr.title(), "*(Draft) My Feature*");
+    }
 }
