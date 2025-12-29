@@ -6,6 +6,7 @@ pub mod checks;
 pub mod land;
 pub mod pull_request;
 pub mod search;
+pub mod stack;
 
 pub use pull_request::PullRequest;
 pub use pull_request::PullRequestReview;
