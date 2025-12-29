@@ -77,7 +77,10 @@ mod tests {
 
         let mock = server
             .mock("GET", "/search/issues")
-            .match_query(mockito::Matcher::UrlEncoded("q".into(), "TEST-123 in:title".into()))
+            .match_query(mockito::Matcher::UrlEncoded(
+                "q".into(),
+                "TEST-123 in:title".into(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"items": []}"#)

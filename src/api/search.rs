@@ -76,7 +76,6 @@ pub async fn fetch_matching_pull_requests_from_repository(
     repository: &str,
     credentials: &Credentials,
 ) -> Result<Vec<PullRequest>, Box<dyn Error>> {
-
     let client = reqwest::Client::new();
 
     let request = api::base_request(

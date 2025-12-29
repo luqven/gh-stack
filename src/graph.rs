@@ -125,17 +125,23 @@ mod tests {
         assert_eq!(flat.len(), 3);
 
         // First PR should have no parent (base is main, not in stack)
-        assert!(flat.iter().any(|(pr, parent)| pr.number() == 1 && parent.is_none()));
+        assert!(flat
+            .iter()
+            .any(|(pr, parent)| pr.number() == 1 && parent.is_none()));
 
         // Second PR should have first as parent
-        assert!(flat
-            .iter()
-            .any(|(pr, parent)| pr.number() == 2 && parent.as_ref().map(|p| p.number()) == Some(1)));
+        assert!(
+            flat.iter()
+                .any(|(pr, parent)| pr.number() == 2
+                    && parent.as_ref().map(|p| p.number()) == Some(1))
+        );
 
         // Third PR should have second as parent
-        assert!(flat
-            .iter()
-            .any(|(pr, parent)| pr.number() == 3 && parent.as_ref().map(|p| p.number()) == Some(2)));
+        assert!(
+            flat.iter()
+                .any(|(pr, parent)| pr.number() == 3
+                    && parent.as_ref().map(|p| p.number()) == Some(2))
+        );
     }
 
     #[test]
