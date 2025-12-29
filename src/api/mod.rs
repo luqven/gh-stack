@@ -88,12 +88,12 @@ mod tests {
             .await;
 
         let client = Client::new();
-        let creds = Credentials::new("fake-token");
+        let _creds = Credentials::new("fake-token");
 
         let response = client
             .get(format!("{}/search/issues", server.url()))
             .query(&[("q", "TEST-123 in:title")])
-            .header("Authorization", format!("token {}", "fake-token"))
+            .header("Authorization", "token fake-token")
             .send()
             .await
             .unwrap();

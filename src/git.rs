@@ -61,17 +61,17 @@ pub fn generate_rebase_script(deps: FlatDep) -> String {
     out
 }
 
-fn oid_to_commit(repo: &Repository, oid: Oid) -> Commit {
+fn oid_to_commit(repo: &Repository, oid: Oid) -> Commit<'_> {
     repo.find_commit(oid).unwrap()
 }
 
-fn head_commit(repo: &Repository) -> Commit {
+fn head_commit(repo: &Repository) -> Commit<'_> {
     repo.find_commit(repo.head().unwrap().target().unwrap())
         .unwrap()
 }
 
 fn checkout_commit(repo: &Repository, commit: &Commit, options: Option<&mut CheckoutBuilder>) {
-    repo.checkout_tree(&commit.as_object(), options).unwrap();
+    repo.checkout_tree(commit.as_object(), options).unwrap();
     repo.set_head_detached(commit.id()).unwrap();
 }
 
@@ -83,7 +83,7 @@ fn rev_to_commit<'a>(repo: &'a Repository, rev: &str) -> Commit<'a> {
 
 /// Commit and checkout `index`
 fn create_commit<'a>(repo: &'a Repository, index: &mut Index, message: &str) -> Commit<'a> {
-    let tree = index.write_tree_to(&repo).unwrap();
+    let tree = index.write_tree_to(repo).unwrap();
     let tree = repo.find_tree(tree).unwrap();
 
     let signature = repo.signature().unwrap();
@@ -98,12 +98,12 @@ fn create_commit<'a>(repo: &'a Repository, index: &mut Index, message: &str) -> 
         )
         .unwrap();
 
-    let commit = oid_to_commit(&repo, commit);
+    let commit = oid_to_commit(repo, commit);
 
     let mut cb = CheckoutBuilder::new();
     cb.force();
 
-    checkout_commit(&repo, &commit, Some(&mut cb));
+    checkout_commit(repo, &commit, Some(&mut cb));
 
     // "Complete" the cherry-pick. There is likely a better way to do
     // this that I haven't found so far.
@@ -114,7 +114,7 @@ fn create_commit<'a>(repo: &'a Repository, index: &mut Index, message: &str) -> 
 
 fn cherry_pick_range(repo: &Repository, walk: &mut Revwalk) {
     for from in walk {
-        let from = oid_to_commit(&repo, from.unwrap());
+        let from = oid_to_commit(repo, from.unwrap());
 
         if from.parent_count() > 1 {
             panic!("Exiting: I don't know how to deal with merge commits correctly.");
@@ -139,7 +139,7 @@ fn cherry_pick_range(repo: &Repository, walk: &mut Revwalk) {
             index.read(true).unwrap();
         }
 
-        create_commit(&repo, &mut index, from.message().unwrap());
+        create_commit(repo, &mut index, from.message().unwrap());
     }
 }
 
@@ -157,24 +157,24 @@ pub async fn perform_rebase(
 
     let (pr, _) = deps[0];
 
-    let base = rev_to_commit(&repo, &remote_ref(remote, pr.base()));
-    let head = rev_to_commit(&repo, pr.head());
+    let base = rev_to_commit(repo, &remote_ref(remote, pr.base()));
+    let head = rev_to_commit(repo, pr.head());
 
     let mut stop_cherry_pick_at = match boundary {
-        Some(rev) => rev_to_commit(&repo, rev).id(),
+        Some(rev) => rev_to_commit(repo, rev).id(),
         None => repo.merge_base(base.id(), head.id()).unwrap(),
     };
     let mut update_local_branches_to = vec![];
 
     println!("Checking out {:?}", base);
-    checkout_commit(&repo, &base, None);
+    checkout_commit(repo, &base, None);
 
     let mut push_refspecs = vec![];
 
     for (pr, _) in deps {
         println!("\nWorking on PR: {:?}", pr.head());
 
-        let from = rev_to_commit(&repo, pr.head());
+        let from = rev_to_commit(repo, pr.head());
 
         let mut walk = repo.revwalk().unwrap();
         walk.set_sorting(Sort::TOPOLOGICAL).unwrap();
@@ -184,20 +184,20 @@ pub async fn perform_rebase(
 
         // TODO: Simplify by using rebase instead of cherry-pick
         // TODO: Skip if remote/<branch> is the same SHA as <branch> (only until the first cherry-pick)
-        cherry_pick_range(&repo, &mut walk);
+        cherry_pick_range(repo, &mut walk);
 
         // Record the commit (in the new stack) that the local branch should now point to.
         // Actually perform the switch later on in a batch so we don't leave the repo in
         // a troubled state if this process is interrupted.
-        update_local_branches_to.push((pr.head(), head_commit(&repo)));
+        update_local_branches_to.push((pr.head(), head_commit(repo)));
 
         // Use remote branch as boundary for the next cherry-pick
-        let from = rev_to_commit(&repo, &remote_ref(remote, pr.head()));
+        let from = rev_to_commit(repo, &remote_ref(remote, pr.head()));
         stop_cherry_pick_at = from.id();
 
         push_refspecs.push(format!(
             "{}:refs/heads/{}",
-            head_commit(&repo).id(),
+            head_commit(repo).id(),
             pr.head()
         ));
     }

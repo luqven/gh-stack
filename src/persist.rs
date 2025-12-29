@@ -37,7 +37,7 @@ fn remove_title_prefixes(row: String, prefix: &str) -> String {
     // Regex removes the prefix from the title and removes surrounding whitespace
     let regex_str = format!(r"\s*{}[^\]]+{}\s*", prefix_1, prefix_2);
     let regex = Regex::new(&regex_str).unwrap();
-    return regex.replace_all(&row, "").trim().to_string().to_owned();
+    regex.replace_all(&row, "").trim().to_string().to_owned()
 }
 
 pub async fn persist(

@@ -6,6 +6,7 @@ use crate::api::{PullRequest, PullRequestReview};
 use crate::{api, Credentials};
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct SearchItem {
     url: String,
     title: String,
@@ -22,7 +23,7 @@ pub async fn fetch_reviews_for_pull_request(
 ) -> Result<Vec<PullRequestReview>, Box<dyn Error>> {
     let client = reqwest::Client::new();
 
-    let request = api::base_request(&client, &credentials, &format!("{}/reviews", pr.url())[..]);
+    let request = api::base_request(&client, credentials, &format!("{}/reviews", pr.url())[..]);
 
     let reviews = request
         .send()
@@ -39,17 +40,13 @@ pub async fn fetch_pull_requests_matching(
 ) -> Result<Vec<PullRequest>, Box<dyn Error>> {
     let client = reqwest::Client::new();
 
-    let request = api::base_request(
-        &client,
-        &credentials,
-        "https://api.github.com/search/issues",
-    )
-    .query(&[("q", format!("{} in:title", pattern))]);
+    let request = api::base_request(&client, credentials, "https://api.github.com/search/issues")
+        .query(&[("q", format!("{} in:title", pattern))]);
 
     let items = request.send().await?.json::<SearchResponse>().await?.items;
 
     let item_futures = items.into_iter().map(|item| {
-        api::base_request(&client, &credentials, &item.url.replace("issues", "pulls")).send()
+        api::base_request(&client, credentials, &item.url.replace("issues", "pulls")).send()
     });
 
     // The `unwrap`s are required here because both `reqwest::send` and `reqwest::json` return a `Result` which has
@@ -78,17 +75,13 @@ pub async fn fetch_matching_pull_requests_from_repository(
 ) -> Result<Vec<PullRequest>, Box<dyn Error>> {
     let client = reqwest::Client::new();
 
-    let request = api::base_request(
-        &client,
-        &credentials,
-        "https://api.github.com/search/issues",
-    )
-    .query(&[("q", format!("{} in:title repo:{}", pattern, repository))]);
+    let request = api::base_request(&client, credentials, "https://api.github.com/search/issues")
+        .query(&[("q", format!("{} in:title repo:{}", pattern, repository))]);
 
     let items = request.send().await?.json::<SearchResponse>().await?.items;
 
     let item_futures = items.into_iter().map(|item| {
-        api::base_request(&client, &credentials, &item.url.replace("issues", "pulls")).send()
+        api::base_request(&client, credentials, &item.url.replace("issues", "pulls")).send()
     });
 
     // The `unwrap`s are required here because both `reqwest::send` and `reqwest::json` return a `Result` which has

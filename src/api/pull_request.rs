@@ -18,6 +18,7 @@ pub enum PullRequestReviewState {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct PullRequestReview {
     state: PullRequestReviewState,
     body: String,
@@ -30,6 +31,7 @@ impl PullRequestReview {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct PullRequestRef {
     label: String,
     #[serde(rename = "ref")]
@@ -46,6 +48,7 @@ pub enum PullRequestStatus {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct PullRequest {
     id: usize,
     number: usize,
@@ -131,7 +134,7 @@ impl PullRequest {
     }
 
     pub fn review_state(&self) -> PullRequestReviewState {
-        if !self.merged_at.is_none() {
+        if self.merged_at.is_some() {
             PullRequestReviewState::MERGED
         } else if self.at_least_one_approval() {
             PullRequestReviewState::APPROVED
@@ -175,7 +178,7 @@ pub async fn update_description(
 ) -> Result<(), Box<dyn Error>> {
     let client = reqwest::Client::new();
     let body = UpdateDescriptionRequest { body: &description };
-    let request = api::base_patch_request(&client, &c, pr.url()).json(&body);
+    let request = api::base_patch_request(&client, c, pr.url()).json(&body);
     request.send().await?;
     Ok(())
 }

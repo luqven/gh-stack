@@ -111,7 +111,7 @@ async fn build_pr_stack(
     credentials: &Credentials,
     exclude: Vec<String>,
 ) -> Result<FlatDep, Box<dyn Error>> {
-    let prs = api::search::fetch_pull_requests_matching(pattern, &credentials).await?;
+    let prs = api::search::fetch_pull_requests_matching(pattern, credentials).await?;
 
     let prs = prs
         .into_iter()
@@ -129,12 +129,9 @@ async fn build_pr_stack_for_repo(
     credentials: &Credentials,
     exclude: Vec<String>,
 ) -> Result<FlatDep, Box<dyn Error>> {
-    let prs = api::search::fetch_matching_pull_requests_from_repository(
-        pattern,
-        repository,
-        &credentials,
-    )
-    .await?;
+    let prs =
+        api::search::fetch_matching_pull_requests_from_repository(pattern, repository, credentials)
+            .await?;
 
     let prs = prs
         .into_iter()
@@ -157,8 +154,7 @@ fn get_excluded(m: &ArgMatches) -> Vec<String> {
 
 fn remove_title_prefixes(title: String, prefix: &str) -> String {
     let regex = Regex::new(&format!("[{}]", prefix).to_string()).unwrap();
-    let result = regex.replace_all(&title, "").into_owned();
-    return result;
+    regex.replace_all(&title, "").into_owned()
 }
 
 #[tokio::main]

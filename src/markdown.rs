@@ -24,7 +24,7 @@ pub fn build_table(
     if let Some(prelude_path) = prelude_path {
         let prelude = fs::read_to_string(prelude_path).unwrap();
         out.push_str(&prelude);
-        out.push_str("\n");
+        out.push('\n');
     }
 
     out.push_str("| PR | Title | Status |  Merges Into  |\n");
