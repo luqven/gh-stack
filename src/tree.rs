@@ -97,7 +97,7 @@ fn parse_github_remote_url(url: &str) -> Option<String> {
     if url.starts_with("https://") || url.starts_with("http://") {
         let without_protocol = url.split("://").nth(1)?;
         // Skip the host part, get everything after first /
-        let path = without_protocol.splitn(2, '/').nth(1)?;
+        let path = without_protocol.split_once('/')?.1;
         let repo = path.trim_end_matches(".git");
         return Some(repo.to_string());
     }

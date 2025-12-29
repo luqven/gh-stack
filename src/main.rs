@@ -250,12 +250,11 @@ fn resolve_repository(
         return Ok(repo);
     }
 
-    Err(format!(
-        "Could not determine repository. Either:\n  \
+    Err("Could not determine repository. Either:\n  \
          - Run from inside a git repo with a GitHub remote\n  \
          - Set GHSTACK_TARGET_REPOSITORY environment variable\n  \
          - Use the -r flag"
-    ))
+        .to_string())
 }
 
 fn remove_title_prefixes(title: String, prefix: &str) -> String {
