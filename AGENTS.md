@@ -7,7 +7,7 @@ Code quality and organization standards for this project.
 1. **Rust only** - No other languages in src/
 2. **Unit test each module** - Tests live in the same file with `#[cfg(test)]`
 3. **Conventional commits** - Commit when a reasonable amount of work is done
-4. **Run tests before committing** - `cargo test`
+4. **Run checks before committing** - `cargo fmt && cargo clippy && cargo test`
 5. **Keep functions focused** - Prefer 2-4 arguments, pass primitives directly
 6. **Short variable names** - Prefer concise, readable names
 
