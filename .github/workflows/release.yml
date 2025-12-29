@@ -20,31 +20,30 @@ jobs:
       - name: Run tests
         run: cargo test
 
-  build-macos-arm64:
+  build-macos:
     needs: test
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build arm64
-        run: cargo build --release
-      - uses: actions/upload-artifact@v4
         with:
-          name: gh-stack-mac-arm64
-          path: target/release/gh-stack
-
-  build-macos-x86:
-    needs: test
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
       - name: Build x86_64
-        run: cargo build --release
+        run: cargo build --release --target x86_64-apple-darwin
+      - name: Build arm64
+        run: cargo build --release --target aarch64-apple-darwin
+      - name: Create universal binary
+        run: |
+          lipo -create \
+            target/x86_64-apple-darwin/release/gh-stack \
+            target/aarch64-apple-darwin/release/gh-stack \
+            -output gh-stack
+      - name: Package
+        run: tar -czvf gh-stack-mac.tar.gz gh-stack
       - uses: actions/upload-artifact@v4
         with:
-          name: gh-stack-mac-x86_64
-          path: target/release/gh-stack
+          name: gh-stack-mac
+          path: gh-stack-mac.tar.gz
 
   build-linux:
     needs: test
@@ -61,34 +60,8 @@ jobs:
           name: gh-stack-linux
           path: gh-stack-linux.tar.gz
 
-  create-universal-binary:
-    needs: [build-macos-arm64, build-macos-x86]
-    runs-on: macos-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: gh-stack-mac-arm64
-          path: arm64
-      - uses: actions/download-artifact@v4
-        with:
-          name: gh-stack-mac-x86_64
-          path: x86_64
-      - name: Create universal binary
-        run: |
-          lipo -create \
-            arm64/gh-stack \
-            x86_64/gh-stack \
-            -output gh-stack
-          chmod +x gh-stack
-      - name: Package
-        run: tar -czvf gh-stack-mac.tar.gz gh-stack
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gh-stack-mac
-          path: gh-stack-mac.tar.gz
-
   release:
-    needs: [create-universal-binary, build-linux]
+    needs: [build-macos, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
