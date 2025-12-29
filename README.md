@@ -15,9 +15,6 @@ This tool assumes that:
 - All PRs in a single "stack" all have a unique identifier in their title (I typically use a Jira ticket number for this).
 - All PRs in the stack live in a single GitHub repository.
 - All remote branches that these PRs represent have local branches named identically.
-- Your PRs are publicly viewable by all GitHub users.
-   - This assumption is due to how the Markdown table is uses https://shields.io to render badges that auto-update based on your PR status.
-      - example URL: https://img.shields.io/github/pulls/detail/state/{{your-user-or-org}}/{{your-repository}}/{{the-pr-number}}
 
 It then looks for all PRs containing this identifier and builds a dependency graph in memory.
 
@@ -107,9 +104,10 @@ $ gh-stack annotate 'stack-identifier' -r '<some/repo>' --prefix '#'
 # contents of `filename.txt`.
 $ gh-stack annotate 'stack-identifier' -p filename.txt
 
-# Same as above, but precede the markdown table with the
-# contents of `filename.txt`.
-$ gh-stack annotate 'stack-identifier' -p filename.txt
+# Same as above, but with shields.io status badges (requires public repo).
+# By default, annotations use GitHub's native PR autolinking which works
+# with both public and private repositories.
+$ gh-stack annotate 'stack-identifier' --badges
 
 # Automatically update the entire stack, both locally and remotely.
 # WARNING: This operation modifies local branches and force-pushes.
@@ -195,6 +193,19 @@ _This is a quick overview of the ways this tool could be used in practice._
    ```
 
    This (idempotently) adds a table like this to the description of every PR in the stack:
+
+   ```markdown
+   ### Stacked PR Chain: EXAMPLE-13799
+   | PR | Title | Merges Into |
+   |:--:|:------|:-----------:|
+   |#1|[EXAMPLE-13799] PR for branch `first`|-|
+   |#2|[EXAMPLE-13799] PR for branch `second`|#1|
+   |#3|[EXAMPLE-13799] PR for branch `third`|#2|
+   ```
+
+   GitHub automatically converts `#1`, `#2`, `#3` to clickable links. Hovering over them shows PR details including current status.
+
+   For public repositories, you can use `--badges` to add shields.io status badges:
    <img src="img/annotate.png" width="700" />
 
 7. Make changes to a branch that rewrites commits in some way (amend, remove a commit, combine commits):
