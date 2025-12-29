@@ -62,6 +62,41 @@ pub struct PullRequest {
 }
 
 impl PullRequest {
+    /// Create a new PullRequest for testing purposes
+    #[cfg(test)]
+    pub fn new_for_test(
+        number: usize,
+        head: &str,
+        base: &str,
+        title: &str,
+        state: PullRequestStatus,
+        draft: bool,
+        merged_at: Option<String>,
+        reviews: Vec<PullRequestReview>,
+    ) -> Self {
+        PullRequest {
+            id: number,
+            number,
+            head: PullRequestRef {
+                label: format!("user:{}", head),
+                gitref: head.to_string(),
+                sha: "abc123".to_string(),
+            },
+            base: PullRequestRef {
+                label: format!("user:{}", base),
+                gitref: base.to_string(),
+                sha: "def456".to_string(),
+            },
+            title: title.to_string(),
+            url: format!("https://api.github.com/repos/test/repo/pulls/{}", number),
+            body: None,
+            state,
+            merged_at,
+            draft,
+            reviews,
+        }
+    }
+
     pub fn head(&self) -> &str {
         &self.head.gitref
     }
