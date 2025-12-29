@@ -2,6 +2,7 @@ use crate::Credentials;
 use reqwest::{Client, RequestBuilder};
 use std::time::Duration;
 
+pub mod land;
 pub mod pull_request;
 pub mod search;
 

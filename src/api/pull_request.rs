@@ -25,6 +25,15 @@ pub struct PullRequestReview {
 }
 
 impl PullRequestReview {
+    /// Create a new PullRequestReview for testing purposes
+    #[cfg(test)]
+    pub fn new_for_test(state: PullRequestReviewState) -> Self {
+        PullRequestReview {
+            state,
+            body: String::new(),
+        }
+    }
+
     pub fn is_approved(&self) -> bool {
         self.state == PullRequestReviewState::APPROVED
     }

@@ -23,6 +23,7 @@ With this graph built up, the tool can:
 - Add a markdown table to the PR description (idempotently) of each PR in the stack describing _all_ PRs in the stack.
 - Log a simple list of all PRs in the stack (+ dependencies) to stdout.
 - Automatically update the stack + push after making local changes.
+- **Land an entire stack** by squash-merging the topmost approved PR and closing the rest.
 
 ---
 
@@ -66,7 +67,8 @@ cargo install --force --path .
 # Set the environment variable for the Github API token
 $ export GHSTACK_OAUTH_TOKEN='<personal access token>'
 
-# Set the environment variable for the repository owner/name
+# Optional: The repository is auto-detected from your git remote.
+# You can override it with an environment variable or the -r flag:
 $ export GHSTACK_TARGET_REPOSITORY='<github repository name>'
 
 # You can also set these in a `.gh-stack.env` file in the project root.
@@ -84,17 +86,18 @@ FLAGS:
 SUBCOMMANDS:
     annotate      Annotate the descriptions of all PRs in a stack with metadata about all PRs in the stack
     autorebase    Rebuild a stack based on changes to local branches and mirror these changes up to the remote
+    land          Land a stack by squash-merging the topmost approved PR and closing the rest
     log           Print a list of all pull requests in a stack to STDOUT
     rebase        Print a bash script to STDOUT that can rebase/update the stack (with a little help)
 
-# Print a description of the stack to stdout. for a specific repository.
+# Print a description of the stack to stdout (auto-detects repository from git remote)
 $ gh-stack log 'stack-identifier'
 
-# # Idempotently add a markdown table summarizing the stack
-# to the description of each PR in the stack for a specific repository.
+# Idempotently add a markdown table summarizing the stack
+# to the description of each PR in the stack
 $ gh-stack annotate 'stack-identifier'
 
-# Same as above, but for the specified repository.
+# Override auto-detected repository with -r flag
 $ gh-stack annotate 'stack-identifier' -r '<some/repo>'
 
 # Same as above, but with a custom title prefix.
@@ -115,6 +118,18 @@ $ gh-stack autorebase 'stack-identifier' -C /path/to/repo
 
 # Same as above, but skips confirmation step.
 $ gh-stack autorebase 'stack-identifier' -C /path/to/repo --ci
+
+# Land the entire stack (squash-merges topmost approved PR, closes the rest)
+$ gh-stack land 'stack-identifier'
+
+# Preview what would happen without making changes
+$ gh-stack land 'stack-identifier' --dry-run
+
+# Skip approval requirement check
+$ gh-stack land 'stack-identifier' --no-approval
+
+# Only land the bottom N PRs in the stack
+$ gh-stack land 'stack-identifier' --count 2
 
 # Emit a bash script that can update a stack in the case of conflicts.
 # WARNING: This script could potentially cause destructive behavior.

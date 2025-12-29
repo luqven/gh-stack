@@ -1,6 +1,7 @@
 pub mod api;
 pub mod git;
 pub mod graph;
+pub mod land;
 pub mod markdown;
 pub mod persist;
 pub mod tree;
@@ -8,7 +9,7 @@ pub mod util;
 
 pub struct Credentials {
     // Personal access token
-    token: String,
+    pub(crate) token: String,
 }
 
 impl Credentials {
