@@ -301,6 +301,23 @@ Contributors are encouraged to submit pull requests to improve the tool. Please 
 
 See [AGENTS.md](AGENTS.md) for coding guidelines.
 
+## Releasing
+
+Releases are automated via GitHub Actions. To create a new release:
+
+```bash
+# Update version in Cargo.toml, then:
+git tag v0.x.0
+git push --tags
+```
+
+This will:
+1. Run tests
+2. Build universal macOS binary (x86_64 + arm64)
+3. Build Linux binary
+4. Create GitHub Release
+5. Open PR to update Homebrew formula
+
 ## Credits
 
 This README and tool were originally written by [@timothyandrew](https://github.com/timothyandrew/gh-stack). I highly recommend reading his blog post [here](https://0xc0d1.com/blog/git-stack/).
