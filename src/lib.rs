@@ -4,6 +4,7 @@ pub mod graph;
 pub mod land;
 pub mod markdown;
 pub mod persist;
+pub mod status;
 pub mod tree;
 pub mod util;
 

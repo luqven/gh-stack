@@ -1,0 +1,11 @@
+---
+source: src/status.rs
+expression: output
+---
+* wip-feature (current) #125 - Work in progress (draft)
+| [? N Y N]
+|
+o feature-1 #123 - Setup base
+| [Y Y Y Y]
+|
+o main

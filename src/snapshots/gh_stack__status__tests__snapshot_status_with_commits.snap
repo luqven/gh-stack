@@ -1,0 +1,12 @@
+---
+source: src/status.rs
+expression: output
+---
+* feature-1 (current) #123 - Add feature
+| [Y Y Y Y]
+|
+| abc1234 - Add widget component
+| def5678 - Update styles
+| + 2 more
+|
+o main

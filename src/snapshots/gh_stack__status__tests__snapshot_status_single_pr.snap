@@ -1,0 +1,8 @@
+---
+source: src/status.rs
+expression: output
+---
+o feature-1 #123 - Single PR
+| [Y Y Y Y]
+|
+o main
