@@ -5,10 +5,34 @@ Show stack status with CI, approval, and merge readiness indicators.
 ## Usage
 
 ```bash
-gh-stack status <identifier> [OPTIONS]
-# or
-gh-stack log --status <identifier> [OPTIONS]
+# Infer stack from current branch (recommended)
+gh-stack status
+
+# Infer from a specific branch
+gh-stack status --branch feat/my-feature
+
+# List all stacks and select interactively
+gh-stack status --all
+
+# Search by identifier in PR titles
+gh-stack status 'STACK-ID'
+
+# CI mode (non-interactive)
+gh-stack status --branch $GITHUB_HEAD_REF --ci
+
+# Use with log command
+gh-stack log --status 'STACK-ID'
 ```
+
+## Stack Discovery
+
+When run without an identifier, `gh-stack status` automatically discovers your stack by:
+
+1. Finding the PR for your current branch
+2. Walking up the PR base chain to find ancestors
+3. Walking down to find PRs that build on yours
+
+This works with any PR structure - no special naming required.
 
 ## Description
 
@@ -68,19 +92,43 @@ Status: [CI | Approved | Mergeable | Stack]
 
 | Flag | Description |
 |------|-------------|
-| `--no-checks` | Skip fetching CI/approval/conflict status (faster, shows basic tree) |
+| `--branch`, `-b` | Infer stack from this branch instead of current |
+| `--all`, `-a` | List all stacks and select interactively |
+| `--ci` | Non-interactive mode for CI environments |
+| `--trunk` | Override trunk branch (default: auto-detect or "main") |
+| `--no-checks` | Skip fetching CI/approval/conflict status (faster) |
 | `--no-color` | Disable colors and Unicode characters |
 | `--help-legend` | Show status bits legend |
 | `--json` | Output in JSON format |
 | `-C, --project <PATH>` | Path to local repository |
 | `-r, --repository <REPO>` | Specify repository (owner/repo) |
 | `-o, --origin <REMOTE>` | Git remote to use (default: origin) |
-| `-e, --excl <NUMBER>` | Exclude PR by number (can be used multiple times) |
+| `-e, --excl <NUMBER>` | Exclude PR by number (repeatable) |
+
+## CI Usage
+
+In CI environments, use `--ci` to disable interactive prompts:
+
+```bash
+# Must provide branch explicitly
+gh-stack status --branch $GITHUB_HEAD_REF --ci
+
+# Or use identifier
+gh-stack status 'STACK-ID' --ci
+
+# JSON output for parsing
+gh-stack status --branch $GITHUB_HEAD_REF --ci --json
+```
+
+The `--ci` flag will:
+- Fail with an error if no identifier or branch is provided
+- Fail if on a trunk branch without an identifier
+- Never prompt for user input
 
 ## JSON Output
 
 ```bash
-gh-stack status STACK-123 --json
+gh-stack status --json
 ```
 
 ```json
@@ -113,41 +161,41 @@ gh-stack status STACK-123 --json
 The legend is shown automatically on first run. To see it again:
 
 ```bash
-gh-stack status STACK-123 --help-legend
+gh-stack status --help-legend
 ```
 
 The legend marker is stored in `~/.gh-stack-legend-seen`.
 
 ## Examples
 
-### Basic usage
+### Infer from current branch
 
 ```bash
-gh-stack status JIRA-1234
+gh-stack status
+```
+
+### Infer from specific branch
+
+```bash
+gh-stack status --branch feat/my-feature
 ```
 
 ### Skip API calls for faster output
 
 ```bash
-gh-stack status JIRA-1234 --no-checks
+gh-stack status --no-checks
 ```
 
 ### Specify repository explicitly
 
 ```bash
-gh-stack status JIRA-1234 -r owner/repo
+gh-stack status -r owner/repo
 ```
 
 ### Output as JSON for scripting
 
 ```bash
-gh-stack status JIRA-1234 --json | jq '.stack[].status.ci'
-```
-
-### Use with log command
-
-```bash
-gh-stack log --status JIRA-1234
+gh-stack status --json | jq '.stack[].status.ci'
 ```
 
 ## See Also
