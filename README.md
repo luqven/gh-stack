@@ -299,6 +299,8 @@ Use at your own risk (and make sure your git repository is backed up), especiall
 
 Contributors are encouraged to submit pull requests to improve the tool. Please stick to semantic versioning and don't submit pull requests that break the tool.
 
+See [AGENTS.md](AGENTS.md) for coding guidelines.
+
 ## Credits
 
 This README and tool were originally written by [@timothyandrew](https://github.com/timothyandrew/gh-stack). I highly recommend reading his blog post [here](https://0xc0d1.com/blog/git-stack/).
