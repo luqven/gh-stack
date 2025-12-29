@@ -1,0 +1,11 @@
+---
+source: src/tree.rs
+expression: output
+---
+o pp--06-14-part_3
+|
+o pp--06-14-part_2
+|
+o main
+
+hint: run from a git repo or use -C <path> to see commits and current branch

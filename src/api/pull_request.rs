@@ -59,6 +59,7 @@ pub struct PullRequest {
     body: Option<String>,
     state: PullRequestStatus,
     merged_at: Option<String>,
+    updated_at: Option<String>,
     draft: bool,
     #[serde(skip)]
     reviews: Vec<PullRequestReview>,
@@ -95,6 +96,44 @@ impl PullRequest {
             body: None,
             state,
             merged_at,
+            updated_at: None,
+            draft,
+            reviews,
+        }
+    }
+
+    /// Create a new PullRequest for testing purposes with updated_at field
+    #[cfg(test)]
+    pub fn new_for_test_with_updated_at(
+        number: usize,
+        head: &str,
+        base: &str,
+        title: &str,
+        state: PullRequestStatus,
+        draft: bool,
+        merged_at: Option<String>,
+        updated_at: Option<String>,
+        reviews: Vec<PullRequestReview>,
+    ) -> Self {
+        PullRequest {
+            id: number,
+            number,
+            head: PullRequestRef {
+                label: format!("user:{}", head),
+                gitref: head.to_string(),
+                sha: "abc123".to_string(),
+            },
+            base: PullRequestRef {
+                label: format!("user:{}", base),
+                gitref: base.to_string(),
+                sha: "def456".to_string(),
+            },
+            title: title.to_string(),
+            url: format!("https://api.github.com/repos/test/repo/pulls/{}", number),
+            body: None,
+            state,
+            merged_at,
+            updated_at,
             draft,
             reviews,
         }
@@ -148,6 +187,18 @@ impl PullRequest {
             Some(body) => body,
             None => "",
         }
+    }
+
+    pub fn updated_at(&self) -> Option<&str> {
+        self.updated_at.as_deref()
+    }
+
+    pub fn is_merged(&self) -> bool {
+        self.merged_at.is_some()
+    }
+
+    pub fn is_draft(&self) -> bool {
+        self.draft
     }
 
     pub async fn fetch_reviews(

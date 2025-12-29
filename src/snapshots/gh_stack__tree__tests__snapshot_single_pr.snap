@@ -1,0 +1,7 @@
+---
+source: src/tree.rs
+expression: output
+---
+o feature-branch
+|
+o main
