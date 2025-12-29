@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use gh_stack::api::PullRequest;
 use gh_stack::graph::FlatDep;
+use gh_stack::land::{self, LandError, LandOptions};
 use gh_stack::util::loop_until_confirm;
 use gh_stack::Credentials;
 use gh_stack::{api, git, graph, markdown, persist, tree};
@@ -122,6 +123,32 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .arg(exclude.clone())
         .arg(identifier.clone());
 
+    let land = SubCommand::with_name("land")
+        .about("Land a stack of PRs by merging the topmost mergeable PR and closing the rest")
+        .setting(AppSettings::ArgRequiredElseHelp)
+        .arg(identifier.clone())
+        .arg(exclude.clone())
+        .arg(repository.clone())
+        .arg(
+            Arg::with_name("no-approval")
+                .long("no-approval")
+                .takes_value(false)
+                .help("Skip approval requirement check"),
+        )
+        .arg(
+            Arg::with_name("count")
+                .long("count")
+                .takes_value(true)
+                .value_name("N")
+                .help("Only land the bottom N PRs in the stack"),
+        )
+        .arg(
+            Arg::with_name("dry-run")
+                .long("dry-run")
+                .takes_value(false)
+                .help("Preview what would happen without making changes"),
+        );
+
     let app = App::new("gh-stack")
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .setting(AppSettings::DisableVersion)
@@ -130,7 +157,8 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .subcommand(annotate)
         .subcommand(log)
         .subcommand(rebase)
-        .subcommand(autorebase);
+        .subcommand(autorebase)
+        .subcommand(land);
 
     app
 }
@@ -369,6 +397,116 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await?;
             println!("All done!");
+        }
+
+        ("land", Some(m)) => {
+            let identifier = m.value_of("identifier").unwrap();
+
+            // Get repository from args or environment
+            let repository = m.value_of("repository").unwrap_or(&repository);
+            if repository.is_empty() {
+                panic!(
+                    "You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY"
+                );
+            }
+
+            println!(
+                "Analyzing stack for {} in {}...\n",
+                style(identifier).bold(),
+                style(repository).bold()
+            );
+
+            let stack =
+                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
+                    .await?;
+
+            if stack.is_empty() {
+                println!("No PRs found matching '{}'", identifier);
+                return Ok(());
+            }
+
+            // Parse options
+            let require_approval = !m.is_present("no-approval");
+            let max_count = m
+                .value_of("count")
+                .map(|s| s.parse::<usize>().expect("--count must be a number"));
+            let dry_run = m.is_present("dry-run");
+
+            let options = LandOptions {
+                require_approval,
+                max_count,
+            };
+
+            // Create the landing plan
+            let plan = match land::create_land_plan(&stack, repository, &options) {
+                Ok(plan) => plan,
+                Err(e) => {
+                    match &e {
+                        LandError::ApprovalRequired { pr_number } => {
+                            eprintln!(
+                                "{} PR #{} requires approval",
+                                style("Error:").red().bold(),
+                                pr_number
+                            );
+                            eprintln!(
+                                "  Hint: Get approval for #{}, or use {} to skip this check",
+                                pr_number,
+                                style("--no-approval").cyan()
+                            );
+                        }
+                        LandError::DraftBlocking { pr_number } => {
+                            eprintln!(
+                                "{} PR #{} is a draft and blocks landing",
+                                style("Error:").red().bold(),
+                                pr_number
+                            );
+                            eprintln!(
+                                "  Hint: Mark PR #{} as ready for review before landing",
+                                pr_number
+                            );
+                        }
+                        _ => {
+                            eprintln!("{} {}", style("Error:").red().bold(), e);
+                        }
+                    }
+                    std::process::exit(1);
+                }
+            };
+
+            // Calculate remaining PRs (those not in the plan)
+            let plan_pr_numbers: Vec<usize> = std::iter::once(plan.top_pr.number())
+                .chain(plan.prs_to_close.iter().map(|pr| pr.number()))
+                .collect();
+            let remaining_prs: Vec<Rc<PullRequest>> = stack
+                .iter()
+                .filter(|(pr, _)| !plan_pr_numbers.contains(&pr.number()))
+                .filter(|(pr, _)| !pr.is_merged() && pr.state() == &api::PullRequestStatus::Open)
+                .map(|(pr, _)| pr.clone())
+                .collect();
+
+            if dry_run {
+                // Print dry-run output
+                println!("{}", land::format_dry_run(&plan, &remaining_prs));
+                return Ok(());
+            }
+
+            // Execute the landing
+            let total_to_land = plan.prs_to_close.len() + 1;
+            println!("Landing {} PR(s)...\n", total_to_land);
+
+            match land::execute_land(&plan, &credentials).await {
+                Ok(result) => {
+                    println!(
+                        "\n{} Stack landed via {}",
+                        style("Done!").green().bold(),
+                        style(&result.merge_url).cyan()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("\n{} {}", style("Error:").red().bold(), e);
+                    std::process::exit(1);
+                }
+            }
         }
 
         (_, _) => panic!("Invalid subcommand."),
