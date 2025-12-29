@@ -73,16 +73,17 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
     let log = SubCommand::with_name("log")
         .about("Print a visual tree of all pull requests in a stack")
         .setting(AppSettings::ArgRequiredElseHelp)
-        .arg(
-            Arg::with_name("mode")
-                .index(1)
-                .possible_values(&["short"])
-                .help("Output mode: omit for tree view, 'short' for compact list"),
-        )
-        .arg(identifier.clone().index(2))
+        .arg(identifier.clone())
         .arg(exclude.clone())
         .arg(repository.clone())
         .arg(origin.clone())
+        .arg(
+            Arg::with_name("short")
+                .long("short")
+                .short("s")
+                .takes_value(false)
+                .help("Use compact list format instead of tree view"),
+        )
         .arg(
             Arg::with_name("project")
                 .long("project")
@@ -320,16 +321,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         ("log", Some(m)) => {
-            // Handle both positional args: mode (optional) and identifier (required)
-            // If only one positional arg is given, it's the identifier
-            let (mode, identifier) = match (m.value_of("mode"), m.value_of("identifier")) {
-                (Some(mode), Some(id)) => (Some(mode), id),
-                (Some(id), None) => (None, id), // "mode" position actually has the identifier
-                (None, Some(id)) => (None, id),
-                (None, None) => {
-                    panic!("You must provide an identifier to search for");
-                }
-            };
+            let identifier = m.value_of("identifier").unwrap();
 
             // resolve repository with fallback chain
             let remote_name = m.value_of("origin").unwrap_or("origin");
@@ -352,7 +344,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             // Check if "short" mode
-            if mode == Some("short") {
+            if m.is_present("short") {
                 // Original flat output
                 for (pr, maybe_parent) in stack {
                     match maybe_parent {
