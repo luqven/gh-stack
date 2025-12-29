@@ -1,5 +1,7 @@
 # gh-stack
 
+[![CI](https://github.com/luqven/gh-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/luqven/gh-stack/actions/workflows/ci.yml)
+
 > This README and tool were originally written by [@timothyandrew](https://github.com/timothyandrew/gh-stack). I highly recommend reading his blog post on sacked-PR workflows [here](https://0xc0d1.com/blog/git-stack/).
 
 I use this tool to help managed stacked pull requests on Github, which are notoriously difficult to manage manually. Here are a few examples:
