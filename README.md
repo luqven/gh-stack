@@ -1,8 +1,10 @@
 # gh-stack
 
-> This README and tool were originally written by [@timothyandrew](https://github.com/timothyandrew/gh-stack). I highly recommend reading his blog post on sacked-PR workflows [here](https://0xc0d1.com/blog/git-stack/).
+[![CI](https://github.com/luqven/gh-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/luqven/gh-stack/actions/workflows/ci.yml)
 
-I use this tool to help managed stacked pull requests on Github, which are notoriously difficult to manage manually. Here are a few examples:
+> This README and tool were originally written by [@timothyandrew](https://github.com/timothyandrew/gh-stack). I highly recommend reading his blog post on stacked-PR workflows [here](https://0xc0d1.com/blog/git-stack/).
+
+I use this tool to help manage stacked pull requests on Github, which are notoriously difficult to manage manually. Here are a few examples:
 
 - https://0xc0d1.com/blog/git-stack/
 - https://stackoverflow.com/questions/26619478/are-dependent-pull-requests-in-github-possible
@@ -17,7 +19,7 @@ This tool assumes that:
    - This assumption is due to how the Markdown table is uses https://shields.io to render badges that auto-update based on your PR status.
       - example URL: https://img.shields.io/github/pulls/detail/state/{{your-user-or-org}}/{{your-repository}}/{{the-pr-number}}
 
-It then looks for all PRs containing this containing this identifier and builds a dependency graph in memory.
+It then looks for all PRs containing this identifier and builds a dependency graph in memory.
 
 With this graph built up, the tool can:
 
@@ -33,6 +35,7 @@ With this graph built up, the tool can:
     - [Examples](#examples)
   - [Strategy](#strategy)
   - [Disclaimer](#disclaimer)
+  - [Releasing](#releasing)
   - [Contributors](#contributors)
   - [Credits](#credits)
 
@@ -290,7 +293,6 @@ This is a quick summary of the strategy the `autorebase` subcommand uses:
 Use at your own risk (and make sure your git repository is backed up), especially because:
 
 - This tool works for my specific use case, but has _not_ been extensively tested.
-- I've been writing Rust for all of 3 weeks at this point.
 - The `autorebase` command is in an experimental state; there are possibly edge cases I haven't considered.
 
 ## Releasing
@@ -311,12 +313,6 @@ This triggers the release workflow which:
 3. Builds Linux binary
 4. Creates GitHub Release with binaries attached
 5. Opens PR to update the Homebrew formula
-
-Install via Homebrew:
-```bash
-brew tap luqven/gh-stack
-brew install gh-stack
-```
 
 ## Contributors
 
