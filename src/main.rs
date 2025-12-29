@@ -47,12 +47,20 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .takes_value(false)
         .help("Use shields.io badges for PR status (requires public repo visibility)");
 
+    let origin = Arg::with_name("origin")
+        .long("origin")
+        .short("o")
+        .takes_value(true)
+        .default_value("origin")
+        .help("Name of the git remote to detect repository from (default: origin)");
+
     let annotate = SubCommand::with_name("annotate")
         .about("Annotate the descriptions of all PRs in a stack with metadata about all PRs in the stack")
         .setting(AppSettings::ArgRequiredElseHelp)
         .arg(identifier.clone())
         .arg(exclude.clone())
         .arg(repository.clone())
+        .arg(origin.clone())
         .arg(ci.clone())
         .arg(prefix.clone())
         .arg(badges.clone())
@@ -74,6 +82,7 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .arg(identifier.clone().index(2))
         .arg(exclude.clone())
         .arg(repository.clone())
+        .arg(origin.clone())
         .arg(
             Arg::with_name("project")
                 .long("project")
@@ -129,6 +138,7 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .arg(identifier.clone())
         .arg(exclude.clone())
         .arg(repository.clone())
+        .arg(origin.clone())
         .arg(
             Arg::with_name("no-approval")
                 .long("no-approval")
@@ -209,6 +219,45 @@ fn get_excluded(m: &ArgMatches) -> Vec<String> {
     }
 }
 
+/// Resolve the repository to use, with fallback chain:
+/// 1. -r flag (explicit override)
+/// 2. GHSTACK_TARGET_REPOSITORY env var
+/// 3. Auto-detect from git remote
+fn resolve_repository(
+    arg_value: Option<&str>,
+    env_value: &str,
+    remote_name: &str,
+) -> Result<String, String> {
+    // Priority 1: Explicit -r flag
+    if let Some(repo) = arg_value {
+        if !repo.is_empty() {
+            return Ok(repo.to_string());
+        }
+    }
+
+    // Priority 2: Environment variable
+    if !env_value.is_empty() {
+        return Ok(env_value.to_string());
+    }
+
+    // Priority 3: Auto-detect from git remote
+    if let Some(repo) = tree::detect_repo_from_remote(remote_name) {
+        eprintln!(
+            "Detected repository: {} (from {} remote)",
+            style(&repo).cyan(),
+            remote_name
+        );
+        return Ok(repo);
+    }
+
+    Err(format!(
+        "Could not determine repository. Either:\n  \
+         - Run from inside a git repo with a GitHub remote\n  \
+         - Set GHSTACK_TARGET_REPOSITORY environment variable\n  \
+         - Use the -r flag"
+    ))
+}
+
 fn remove_title_prefixes(title: String, prefix: &str) -> String {
     let regex = Regex::new(&format!("[{}]", prefix).to_string()).unwrap();
     regex.replace_all(&title, "").into_owned()
@@ -231,26 +280,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let prefix = regex::escape(prefix);
             // if ci flag is set, set ci to true
             let ci = m.is_present("ci");
-            // replace it with the -r argument value if set
-            let repository = m.value_of("repository").unwrap_or(&repository);
-            // if repository is still unset, throw an error
-            if repository.is_empty() {
-                let error = format!(
-                    "Invalid target repository {repo}. You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY", repo = repository
-                );
-                panic!("{}", error);
-            }
+            // resolve repository with fallback chain
+            let remote_name = m.value_of("origin").unwrap_or("origin");
+            let repository = resolve_repository(m.value_of("repository"), &repository, remote_name)
+                .unwrap_or_else(|e| panic!("{}", e));
 
             let identifier = remove_title_prefixes(identifier.to_string(), &prefix);
 
             println!(
                 "Searching for {} identifier in {} repo",
                 style(&identifier).bold(),
-                style(repository).bold()
+                style(&repository).bold()
             );
 
             let stack =
-                build_pr_stack_for_repo(&identifier, repository, &credentials, get_excluded(m))
+                build_pr_stack_for_repo(&identifier, &repository, &credentials, get_excluded(m))
                     .await?;
 
             let use_badges = m.is_present("badges");
@@ -258,7 +302,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &stack,
                 &identifier,
                 m.value_of("prelude"),
-                repository,
+                &repository,
                 use_badges,
             );
 
@@ -288,22 +332,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             };
 
-            // replace it with the -r argument value if set
-            let repository = m.value_of("repository").unwrap_or(&repository);
-            // if repository is still unset, throw an error
-            if repository.is_empty() {
-                panic!(
-                    "You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY"
-                );
-            }
+            // resolve repository with fallback chain
+            let remote_name = m.value_of("origin").unwrap_or("origin");
+            let repository = resolve_repository(m.value_of("repository"), &repository, remote_name)
+                .unwrap_or_else(|e| panic!("{}", e));
 
             println!(
                 "Searching for {} identifier in {} repo",
                 style(identifier).bold(),
-                style(repository).bold()
+                style(&repository).bold()
             );
             let stack =
-                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
+                build_pr_stack_for_repo(identifier, &repository, &credentials, get_excluded(m))
                     .await?;
 
             // Check for empty stack
@@ -356,24 +396,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ("autorebase", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
 
-            // store the value of GHSTACK_TARGET_REPOSITORY
-            let repository = env::var("GHSTACK_TARGET_REPOSITORY").unwrap_or_default();
-            // replace it with the -r argument value if set
-            let repository = m.value_of("repository").unwrap_or(&repository);
-            // if repository is still unset, throw an error
-            if repository.is_empty() {
-                panic!(
-                    "You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY"
-                );
-            }
+            // defaults to "origin" if no remote is specified
+            let remote_name = m.value_of("origin").unwrap_or("origin");
+
+            // resolve repository with fallback chain
+            let repository = resolve_repository(m.value_of("repository"), &repository, remote_name)
+                .unwrap_or_else(|e| panic!("{}", e));
 
             println!(
                 "Searching for {} identifier in {} repo",
                 style(identifier).bold(),
-                style(repository).bold()
+                style(&repository).bold()
             );
             let stack =
-                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
+                build_pr_stack_for_repo(identifier, &repository, &credentials, get_excluded(m))
                     .await?;
 
             let project = m
@@ -381,9 +417,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .expect("The --project argument is required.");
             let project = Repository::open(project)?;
 
-            // defaults to "origin" if no remote is specified
-            let remote = m.value_of("origin").unwrap_or("origin");
-            let remote = project.find_remote(remote).unwrap();
+            // use the same remote name for finding the remote to push to
+            let remote = project.find_remote(remote_name).unwrap();
 
             // if ci flag is set, set ci to true
             let ci = m.is_present("ci");
@@ -402,22 +437,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ("land", Some(m)) => {
             let identifier = m.value_of("identifier").unwrap();
 
-            // Get repository from args or environment
-            let repository = m.value_of("repository").unwrap_or(&repository);
-            if repository.is_empty() {
-                panic!(
-                    "You must pass a repository with the -r flag or set GHSTACK_TARGET_REPOSITORY"
-                );
-            }
+            // resolve repository with fallback chain
+            let remote_name = m.value_of("origin").unwrap_or("origin");
+            let repository = resolve_repository(m.value_of("repository"), &repository, remote_name)
+                .unwrap_or_else(|e| panic!("{}", e));
 
             println!(
                 "Analyzing stack for {} in {}...\n",
                 style(identifier).bold(),
-                style(repository).bold()
+                style(&repository).bold()
             );
 
             let stack =
-                build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
+                build_pr_stack_for_repo(identifier, &repository, &credentials, get_excluded(m))
                     .await?;
 
             if stack.is_empty() {
@@ -438,7 +470,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             };
 
             // Create the landing plan
-            let plan = match land::create_land_plan(&stack, repository, &options) {
+            let plan = match land::create_land_plan(&stack, &repository, &options) {
                 Ok(plan) => plan,
                 Err(e) => {
                     match &e {

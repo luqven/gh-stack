@@ -66,6 +66,45 @@ pub fn detect_repo() -> Option<Repository> {
     Repository::discover(".").ok()
 }
 
+/// Try to detect repository (owner/repo) from git remote
+///
+/// # Arguments
+/// * `remote_name` - Name of the remote to use (typically "origin")
+pub fn detect_repo_from_remote(remote_name: &str) -> Option<String> {
+    let repo = detect_repo()?;
+    let remote = repo.find_remote(remote_name).ok()?;
+    let url = remote.url()?;
+    parse_github_remote_url(url)
+}
+
+/// Parse a GitHub remote URL to extract owner/repo
+///
+/// Handles:
+/// - SSH: git@github.com:owner/repo.git
+/// - SSH (Enterprise): git@github.mycompany.com:owner/repo.git
+/// - HTTPS: https://github.com/owner/repo.git
+/// - HTTPS (Enterprise): https://github.mycompany.com/owner/repo.git
+/// - Without .git suffix
+fn parse_github_remote_url(url: &str) -> Option<String> {
+    // SSH format: git@<host>:owner/repo.git
+    if url.starts_with("git@") {
+        let path = url.split(':').nth(1)?;
+        let repo = path.trim_end_matches(".git");
+        return Some(repo.to_string());
+    }
+
+    // HTTPS format: https://<host>/owner/repo.git
+    if url.starts_with("https://") || url.starts_with("http://") {
+        let without_protocol = url.split("://").nth(1)?;
+        // Skip the host part, get everything after first /
+        let path = without_protocol.splitn(2, '/').nth(1)?;
+        let repo = path.trim_end_matches(".git");
+        return Some(repo.to_string());
+    }
+
+    None
+}
+
 /// Get current branch name from repo
 pub fn current_branch(repo: &Repository) -> Option<String> {
     repo.head().ok()?.shorthand().map(String::from)
@@ -1161,5 +1200,72 @@ mod tests {
 
         let output = render(&entries, &config, true);
         insta::assert_snapshot!(output);
+    }
+
+    // Tests for parse_github_remote_url
+    #[test]
+    fn test_parse_github_remote_url_ssh() {
+        assert_eq!(
+            parse_github_remote_url("git@github.com:owner/repo.git"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_github_remote_url_ssh_no_suffix() {
+        assert_eq!(
+            parse_github_remote_url("git@github.com:owner/repo"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_github_remote_url_https() {
+        assert_eq!(
+            parse_github_remote_url("https://github.com/owner/repo.git"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_github_remote_url_https_no_suffix() {
+        assert_eq!(
+            parse_github_remote_url("https://github.com/owner/repo"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_github_remote_url_http() {
+        assert_eq!(
+            parse_github_remote_url("http://github.com/owner/repo.git"),
+            Some("owner/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_github_remote_url_enterprise_ssh() {
+        assert_eq!(
+            parse_github_remote_url("git@github.mycompany.com:org/project.git"),
+            Some("org/project".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_github_remote_url_enterprise_https() {
+        assert_eq!(
+            parse_github_remote_url("https://github.mycompany.com/org/project.git"),
+            Some("org/project".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_github_remote_url_invalid() {
+        assert_eq!(parse_github_remote_url("not-a-url"), None);
+    }
+
+    #[test]
+    fn test_parse_github_remote_url_empty() {
+        assert_eq!(parse_github_remote_url(""), None);
     }
 }
