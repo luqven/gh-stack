@@ -41,6 +41,11 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .takes_value(true)
         .help("PR title prefix identifier to remove from the title");
 
+    let badges = Arg::with_name("badges")
+        .long("badges")
+        .takes_value(false)
+        .help("Use shields.io badges for PR status (requires public repo visibility)");
+
     let annotate = SubCommand::with_name("annotate")
         .about("Annotate the descriptions of all PRs in a stack with metadata about all PRs in the stack")
         .setting(AppSettings::ArgRequiredElseHelp)
@@ -49,6 +54,7 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .arg(repository.clone())
         .arg(ci.clone())
         .arg(prefix.clone())
+        .arg(badges.clone())
         .arg(Arg::with_name("prelude")
                 .long("prelude")
                 .short("p")
@@ -219,12 +225,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 build_pr_stack_for_repo(&identifier, repository, &credentials, get_excluded(m))
                     .await?;
 
+            let use_badges = m.is_present("badges");
             let table = markdown::build_table(
                 &stack,
                 &identifier,
                 m.value_of("prelude"),
                 repository,
-                false,
+                use_badges,
             );
 
             for (pr, _) in stack.iter() {
