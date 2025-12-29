@@ -554,6 +554,7 @@ pub fn render_status_json(entries: &[StatusEntry]) -> Result<String, serde_json:
 mod tests {
     use super::*;
     use crate::api::{PullRequest, PullRequestStatus};
+    use serial_test::serial;
     use tempfile::TempDir;
 
     // === StatusBit tests ===
@@ -905,6 +906,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_should_show_legend_first_run() {
         with_temp_home(|_| {
             // First call should return true and create the file
@@ -913,6 +915,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_should_show_legend_subsequent_run() {
         with_temp_home(|home| {
             // Create the legend file
