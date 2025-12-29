@@ -8,7 +8,7 @@ Code quality and organization standards for this project.
 2. **Unit test each module** - Tests live in the same file with `#[cfg(test)]`
 3. **Conventional commits** - Commit when a reasonable amount of work is done
 4. **Run tests before committing** - `cargo test`
-5. **Max 4 arguments per function** - Use structs for more
+5. **Keep functions focused** - Prefer 2-4 arguments, pass primitives directly
 6. **Short variable names** - Prefer concise, readable names
 
 ## Code Organization
@@ -49,20 +49,15 @@ chore: maintenance tasks
 
 ## Function Signatures
 
-Prefer structs over many arguments:
+Pass primitives directly, keep arg count low:
 
 ```rust
-// Bad - too many args
-fn create_pr(token: &str, repo: &str, title: &str, body: &str, base: &str) -> Result<PR>
+// Good - clear, focused
+fn base_request(client: &Client, credentials: &Credentials, url: &str) -> RequestBuilder
 
-// Good - options struct
-struct CreatePrOpts<'a> {
-    repo: &'a str,
-    title: &'a str,
-    body: Option<&'a str>,
-    base: &'a str,
-}
-fn create_pr(token: &str, opts: CreatePrOpts) -> Result<PR>
+fn build_table(deps: &FlatDep, title: &str, prelude: Option<&str>, repo: &str) -> String
+
+async fn perform_rebase(deps: FlatDep, repo: &Repository, remote: &str, boundary: Option<&str>, ci: bool)
 ```
 
 ## Naming
