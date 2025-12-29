@@ -2,40 +2,14 @@
 
 [![CI](https://github.com/luqven/gh-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/luqven/gh-stack/actions/workflows/ci.yml)
 
-> This README and tool were originally written by [@timothyandrew](https://github.com/timothyandrew/gh-stack). I highly recommend reading his blog post on stacked-PR workflows [here](https://0xc0d1.com/blog/git-stack/).
+Manage stacked pull requests on GitHub.
 
-I use this tool to help manage stacked pull requests on Github, which are notoriously difficult to manage manually. Here are a few examples:
+## Features
 
-- https://0xc0d1.com/blog/git-stack/
-- https://stackoverflow.com/questions/26619478/are-dependent-pull-requests-in-github-possible
-- https://gist.github.com/Jlevyd15/66743bab4982838932dda4f13f2bd02a
-
-This tool assumes that:
-
-- All PRs in a single "stack" all have a unique identifier in their title (I typically use a Jira ticket number for this).
-- All PRs in the stack live in a single GitHub repository.
-- All remote branches that these PRs represent have local branches named identically.
-
-It then looks for all PRs containing this identifier and builds a dependency graph in memory.
-
-With this graph built up, the tool can:
-
-- Add a markdown table to the PR description (idempotently) of each PR in the stack describing _all_ PRs in the stack.
-- Log a simple list of all PRs in the stack (+ dependencies) to stdout.
-- Automatically update the stack + push after making local changes.
-- **Land an entire stack** by squash-merging the topmost approved PR and closing the rest.
-
----
-
-- [gh-stack](#gh-stack)
-  - [Installation](#installation)
-  - [Usage](#usage)
-    - [Examples](#examples)
-  - [Strategy](#strategy)
-  - [Disclaimer](#disclaimer)
-  - [Releasing](#releasing)
-  - [Contributors](#contributors)
-  - [Credits](#credits)
+- **Visualize** your stack with `gh-stack log`
+- **Annotate** PR descriptions with stack metadata tables
+- **Rebase** entire stacks after local changes
+- **Land** a stack by squash-merging the top PR and closing the rest
 
 ## Installation
 
@@ -44,322 +18,153 @@ brew tap luqven/gh-stack
 brew install gh-stack
 ```
 
-If you cloned this repository, you can build and install from source with:
+<details>
+<summary>Build from source</summary>
 
 ```bash
-# Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Configure `PATH`
 export PATH="$HOME/.cargo/bin:$PATH"
-
-# Install `gh-stack`
-cd gh-stack
 cargo install --force --path .
 ```
+</details>
 
-## Usage
-
-> Note: If you don't have a personal access token, you can generate one here:
-> https://github.com/settings/tokens. Give your token `repo` scope permissions.
+## Setup
 
 ```bash
-# Set the environment variable for the Github API token
-$ export GHSTACK_OAUTH_TOKEN='<personal access token>'
-
-# Optional: The repository is auto-detected from your git remote.
-# You can override it with an environment variable or the -r flag:
-$ export GHSTACK_TARGET_REPOSITORY='<github repository name>'
-
-# You can also set these in a `.gh-stack.env` file in the project root.
+export GHSTACK_OAUTH_TOKEN='<personal access token>'  # repo scope required
+# Optional: override auto-detected repository
+export GHSTACK_TARGET_REPOSITORY='owner/repo'
 ```
+
+You can also set these in a `.gh-stack.env` file.
+
+## Commands
+
+### log
+
+Visualize your stack. [Learn more](docs/log.md)
 
 ```bash
-$ gh-stack
-
-USAGE:
-    gh-stack <SUBCOMMAND>
-
-FLAGS:
-    -h, --help    Prints help information
-
-SUBCOMMANDS:
-    annotate      Annotate the descriptions of all PRs in a stack with metadata about all PRs in the stack
-    autorebase    Rebuild a stack based on changes to local branches and mirror these changes up to the remote
-    land          Land a stack by squash-merging the topmost approved PR and closing the rest
-    log           Print a visual tree of all pull requests in a stack
-    rebase        Print a bash script to STDOUT that can rebase/update the stack (with a little help)
-
-# Print a description of the stack to stdout (auto-detects repository from git remote)
-$ gh-stack log 'stack-identifier'
-
-# Idempotently add a markdown table summarizing the stack
-# to the description of each PR in the stack
-$ gh-stack annotate 'stack-identifier'
-
-# Override auto-detected repository with -r flag
-$ gh-stack annotate 'stack-identifier' -r '<some/repo>'
-
-# Same as above, but with a custom title prefix.
-$ gh-stack annotate 'stack-identifier' -r '<some/repo>' --prefix '#'
-
-# Same as above, but precede the markdown table with the
-# contents of `filename.txt`.
-$ gh-stack annotate 'stack-identifier' -p filename.txt
-
-# Same as above, but with shields.io status badges (requires public repo).
-# By default, annotations use GitHub's native PR autolinking which works
-# with both public and private repositories.
-$ gh-stack annotate 'stack-identifier' --badges
-
-# Automatically update the entire stack, both locally and remotely.
-# WARNING: This operation modifies local branches and force-pushes.
-$ gh-stack autorebase 'stack-identifier' -C /path/to/repo
-
-# Same as above, but skips confirmation step.
-$ gh-stack autorebase 'stack-identifier' -C /path/to/repo --ci
-
-# Land the entire stack (squash-merges topmost approved PR, closes the rest)
-$ gh-stack land 'stack-identifier'
-
-# Preview what would happen without making changes
-$ gh-stack land 'stack-identifier' --dry-run
-
-# Skip approval requirement check
-$ gh-stack land 'stack-identifier' --no-approval
-
-# Only land the bottom N PRs in the stack
-$ gh-stack land 'stack-identifier' --count 2
-
-# Emit a bash script that can update a stack in the case of conflicts.
-# WARNING: This script could potentially cause destructive behavior.
-$ gh-stack rebase 'stack-identifier'
+gh-stack log 'STACK-ID'
+gh-stack log 'STACK-ID' --short  # compact list view
 ```
 
-### Examples
+<details>
+<summary>Example output</summary>
 
-_This is a quick overview of the ways this tool could be used in practice._
+```
+◉ feat/part-3 (current)
+│ 2 hours ago
+│
+│ a1b2c3d - Add validation logic
+│ f4e5d6c - Update tests
+│
+◯ feat/part-2
+│ 3 hours ago
+│
+│ 1a2b3c4 - Implement core feature
+│
+◯ feat/part-1
+│ 5 hours ago
+│
+│ 9z8y7x6 - Initial scaffolding
+│
+◯ main
+```
+</details>
 
-1. Write some code, create local commits/branches:
+### annotate
 
-   ```bash
-   $ git checkout -b first
-   # Write code
-   $ git add -A; git commit -m 'first'
+Add a markdown table to each PR description. [Learn more](docs/annotate.md)
 
-   $ git checkout -b second
-   # Write code
-   $ git add -A; git commit -m 'second #1'
-   # Write code
-   $ git add -A; git commit -m 'second #2'
+```bash
+gh-stack annotate 'STACK-ID'
+gh-stack annotate 'STACK-ID' --badges  # shields.io badges (public repos)
+gh-stack annotate 'STACK-ID' --ci      # skip confirmation
+```
 
-   $ git checkout -b third
-   # Write code
-   $ git add -A; git commit -m 'third'
-   ```
+<details>
+<summary>Example output</summary>
 
-2. Your Git tree now looks like:
+This adds a table to each PR description:
 
-   ```bash
-   * 42315c4 U - (third) third
-   |
-   * 6db2c28 U - (second) second #2
-   |
-   * 5746a83 U - second #1
-   |
-   * e845ded U - (first) first
-   |
-   * 8031011 U - initial commit
-   ```
+```markdown
+### Stack: STACK-ID
 
-3. Push each branch:
+| PR | Title | Base |
+|:--:|:------|:----:|
+| #103 | [STACK-ID] Add validation | #102 |
+| #102 | [STACK-ID] Implement feature | #101 |
+| #101 | [STACK-ID] Initial scaffolding | main |
+```
 
-   ```bash
-   $ git push origin first:first second:second third:third
-     * [new branch]      first -> first
-     * [new branch]      second -> second
-     * [new branch]      third -> third
-   ```
+GitHub auto-links PR numbers, showing status on hover.
+</details>
 
-4. Create a PR for each new branch (starting at `first`), and:
+### land
 
-   - Ensure that all the PRs have a common identifier in their title (I'll use `[EXAMPLE-17399]` here). ~This identifier (currently) is required to be unique across all GitHub repositories accessible to you (including _all_ public repositories).~
-   - It is recommended that you use the `-r` flag to specify the repository you want gh-stack to search for PRs in. Otherwise, gh-stack will search all repositories accessible to you. This can result in matches from multiple repositories that are unrelated to the stack.
-   - Set the `base` for each PR to the branch preceding it. Here, `first`'s PR is set to merge into `master`, `second`'s PR is set to merge into `first`, and `third`'s PR is set to merge into `second`.
+Squash-merge the topmost approved PR and close the rest. [Learn more](docs/land.md)
 
-5. Log all PRs in the stack:
+```bash
+gh-stack land 'STACK-ID'
+gh-stack land 'STACK-ID' --dry-run      # preview changes
+gh-stack land 'STACK-ID' --count 2      # only land bottom 2 PRs
+gh-stack land 'STACK-ID' --no-approval  # skip approval check
+```
 
-   ```bash
-   # Tree view (default)
-   $ gh-stack log 'EXAMPLE-13799' -r 'example_user/example-repo'
-   ◉ third (current)
-   │ 2 hours ago
-   │
-   ◯ second
-   │ 2 hours ago
-   │
-   ◯ first
-   │ 2 hours ago
-   │
-   ◯ master
+### autorebase
 
-   # Compact list view
-   $ gh-stack log 'EXAMPLE-13799' -r 'example_user/example-repo' --short
-    #1: [EXAMPLE-13799] PR for branch `first` (Base)
-    #2: [EXAMPLE-13799] PR for branch `second` (Merges into #1)
-    #3: [EXAMPLE-13799] PR for branch `third` (Merges into #2)
-   ```
+Rebuild and push a stack after local changes. [Learn more](docs/autorebase.md)
 
-6. Annotate all PRs with information about the stack:
+```bash
+gh-stack autorebase 'STACK-ID' -C /path/to/repo
+gh-stack autorebase 'STACK-ID' -C /path/to/repo --ci  # skip confirmation
+```
 
-   ```bash
-   $ gh-stack annotate 'EXAMPLE-13799' -r 'example_user/example-repo'
-    1: [EXAMPLE-13799] PR for branch `first`
-    2: [EXAMPLE-13799] PR for branch `second`
-    3: [EXAMPLE-13799] PR for branch `third`
-    Going to update these PRs ☝️  Type 'yes' to continue: yes
-    Done!
-   ```
+### rebase
 
-   This (idempotently) adds a table like this to the description of every PR in the stack:
+Generate a bash script for manual rebasing. [Learn more](docs/rebase.md)
 
-   ```markdown
-   ### Stacked PR Chain: EXAMPLE-13799
-   | PR | Title | Merges Into |
-   |:--:|:------|:-----------:|
-   |#1|[EXAMPLE-13799] PR for branch `first`|-|
-   |#2|[EXAMPLE-13799] PR for branch `second`|#1|
-   |#3|[EXAMPLE-13799] PR for branch `third`|#2|
-   ```
+```bash
+gh-stack rebase 'STACK-ID' > rebase.sh
+```
 
-   GitHub automatically converts `#1`, `#2`, `#3` to clickable links. Hovering over them shows PR details including current status.
+## Workflow
 
-   For public repositories, you can use `--badges` to add shields.io status badges:
-   <img src="img/annotate.png" width="700" />
+1. Create branches that build on each other
+2. Push and create PRs with a shared identifier (e.g., `[TICKET-123]`)
+3. Set each PR's base to the branch below it
+4. Use `gh-stack annotate` to add stack tables
+5. After rebasing, use `gh-stack autorebase` to sync
+6. Use `gh-stack land` when ready to merge
 
-7. Make changes to a branch that rewrites commits in some way (amend, remove a commit, combine commits):
+## Requirements
 
-   ```bash
-   $ git checkout first
-   # Do some work
-   $ git add -A; git commit --amend -m 'amended first'
-   ```
+- All PRs in a stack share a unique identifier in their title
+- All PRs live in a single GitHub repository
+- Remote branches have matching local branch names
 
-   History has now diverged, and this will cause conflicts with dependent PRs when `first` is (force-)pushed.
+## Troubleshooting
 
-   ```bash
-   * e7cb9c6 U - (HEAD -> first) amended first
-   |
-   | * 42315c4 N - (origin/third, third) third
-   | |
-   | * 6db2c28 N - (origin/second, second) second #2
-   | |
-   | * 5746a83 N - second #1
-   | |
-   | * e845ded N - (origin/first) first
-   |/
-   |
-   * 8031011 U - (origin/master, master) initial commit
-   ```
-
-8. Use the `autorebase` subcommand to fix this inconsistency (it requires a path to a local checkout of the repository):
-
-   ```bash
-   $ gh-stack autorebase --project /tmp/test EXAMPLE-13799
-   Checking out Commit { id: 803101159653bf4bf92bf098e577abc436458b17, summary: "initial commit" }
-
-   Working on PR: "first"
-   Cherry-picking: Commit { id: e7cb9c6cdb03374a6c533cbf1fc23a7d611a73c7, summary: "amended first" }
-
-   Working on PR: "second"
-   Cherry-picking: Commit { id: 5746a83aed004d0867d52d40efc9bd800b5b7499, summary: "second #1" }
-   Cherry-picking: Commit { id: 6db2c2817dfed244d5fbd8cbb9b8095965ac9a05, summary: "second #2" }
-
-   Working on PR: "third"
-   Cherry-picking: Commit { id: 42315c46b42044ebc4b57a995a75b97699f4855a, summary: "third" }
-
-   ["b45e5838a93b33411a5f0c9f726bc1987bc71ff5:refs/heads/first", "93170d2199ed9c2ae30d1e7492947acf477fb035:refs/heads/second", "a85a1931c44c3138d993128591af2cad2ef6c68d:refs/heads/third"]
-   Going to push these refspecs ☝️  Type 'yes' to continue: yes
-   Enumerating objects: 12, done.
-   Counting objects: 100% (12/12), done.
-   Delta compression using up to 8 threads
-   Compressing objects: 100% (8/8), done.
-   Writing objects: 100% (11/11), 907 bytes | 453.00 KiB/s, done.
-   Total 11 (delta 3), reused 0 (delta 0)
-   remote: Resolving deltas: 100% (3/3), done.
-   To github.com:timothyandrew/test.git
-    + e845ded...b45e583 b45e5838a93b33411a5f0c9f726bc1987bc71ff5 -> first (forced update)
-    + 6db2c28...93170d2 93170d2199ed9c2ae30d1e7492947acf477fb035 -> second (forced update)
-    + 42315c4...a85a193 a85a1931c44c3138d993128591af2cad2ef6c68d -> third (forced update)
-
-   Updating local branches so they point to the new stack.
-
-     + Branch first now points to b45e5838a93b33411a5f0c9f726bc1987bc71ff5
-     + Branch second now points to 93170d2199ed9c2ae30d1e7492947acf477fb035
-     + Branch third now points to a85a1931c44c3138d993128591af2cad2ef6c68d
-   All done!
-   ```
-
-   - This restores local history to a flat list and pushes the tip of each branch up to update the PRs themselves.
-
-     ```bash
-     * a85a193 N - (HEAD, origin/third, third) third
-     |
-     * 93170d2 N - (origin/second, second) second #2
-     |
-     * 61f64b6 N - second #1
-     |
-     * b45e583 N - (origin/first, first) amended first
-     |
-     * 8031011 U - (origin/master, master) initial commit
-     ```
-
-   - If conflicts are encountered, `autorebase` will pause and allow you to fix the conflicts before resuming.
-
-## Strategy
-
-This is a quick summary of the strategy the `autorebase` subcommand uses:
-
-1. Find the `merge_base` between the local branch of the first PR in the stack and the branch it merges into (usually `develop`). This forms the boundary for the initial cherry-pick. This is a heuristic and is not suitable for all situations, especially when changes have already been pushed or PRs are merged directly on GitHub. Accept an explicit boundary for the initial cherry-pick to avoid ambiguity here.
-2. Check out the commit/ref that the first PR in the stack merges into (usually `develop`). We're going to cherry-pick the entire stack onto this commit.
-3. Cherry-pick all commits from the first PR (stopping at the cherry-pick boundary calculated in 1.) onto `HEAD`.
-4. Move the _local_ branch for the first PR so it points at `HEAD`.
-5. The _remote tracking_ branch for the first PR becomes the next cherry-pick boundary.
-6. Repeat steps 3-5 for each subsequent PR until all PRs have been cherry-picked over.
-7. Push all refs at once by passing multiple refspecs to a single invocation of `git push -f`.
+See [docs/troubleshooting.md](docs/troubleshooting.md) for common issues and solutions.
 
 ## Disclaimer
 
-Use at your own risk (and make sure your git repository is backed up), especially because:
+Use at your own risk. The `autorebase` command modifies git history and force-pushes.
 
-- This tool works for my specific use case, but has _not_ been extensively tested.
-- The `autorebase` command is in an experimental state; there are possibly edge cases I haven't considered.
-
-## Releasing
-
-Releases are automated via GitHub Actions. To create a new release:
-
-```bash
-# Update version in Cargo.toml, then:
-git add Cargo.toml
-git commit -m "chore: release v0.x.0"
-git tag v0.x.0
-git push origin master v0.x.0
-```
-
-This triggers the release workflow which:
-1. Runs tests
-2. Builds universal macOS binary (x86_64 + arm64)
-3. Builds Linux binary
-4. Creates GitHub Release with binaries attached
-5. Opens PR to update the Homebrew formula
-
-## Contributors
-
-Contributors are encouraged to submit pull requests to improve the tool. Please stick to semantic versioning and don't submit pull requests that break the tool.
+## Contributing
 
 See [AGENTS.md](AGENTS.md) for coding guidelines.
 
-## Credits
+## Releasing
 
-This README and tool were originally written by [@timothyandrew](https://github.com/timothyandrew/gh-stack). I highly recommend reading his blog post [here](https://0xc0d1.com/blog/git-stack/).
+```bash
+# Update version in Cargo.toml
+git commit -m "chore: release vX.Y.Z"
+git tag vX.Y.Z
+git push origin master vX.Y.Z
+```
+
+---
+
+Originally created by [@timothyandrew](https://github.com/timothyandrew/gh-stack). See his [blog post on stacked PRs](https://0xc0d1.com/blog/git-stack/).
