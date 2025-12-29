@@ -219,8 +219,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 build_pr_stack_for_repo(&identifier, repository, &credentials, get_excluded(m))
                     .await?;
 
-            let table =
-                markdown::build_table(&stack, &identifier, m.value_of("prelude"), repository);
+            let table = markdown::build_table(
+                &stack,
+                &identifier,
+                m.value_of("prelude"),
+                repository,
+                false,
+            );
 
             for (pr, _) in stack.iter() {
                 println!("{}: {}", pr.number(), pr.title());

@@ -3,6 +3,6 @@ source: src/markdown.rs
 expression: table
 ---
 ### ✅ Stacked PR Chain: MERGED-TEST
-| PR | Title | Status |  Merges Into  |
-|:--:|:------|:-------|:-------------:|
-|#1|~~Merged feature~~|![](https://img.shields.io/github/pulls/detail/state/user/repo/1?label=%20)|-|
+| PR | Title | Merges Into |
+|:--:|:------|:-----------:|
+|#1|~~Merged feature~~|-|

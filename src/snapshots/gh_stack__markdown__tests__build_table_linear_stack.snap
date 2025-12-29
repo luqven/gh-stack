@@ -3,8 +3,8 @@ source: src/markdown.rs
 expression: table
 ---
 ### Stacked PR Chain: STACK-456
-| PR | Title | Status |  Merges Into  |
-|:--:|:------|:-------|:-------------:|
-|#1|Base feature|![](https://img.shields.io/github/pulls/detail/state/org/project/1?label=Pending)|-|
-|#2|Second feature|![](https://img.shields.io/github/pulls/detail/state/org/project/2?label=Pending)|#1|
-|#3|Third feature|![](https://img.shields.io/github/pulls/detail/state/org/project/3?label=Pending)|#2|
+| PR | Title | Merges Into |
+|:--:|:------|:-----------:|
+|#1|Base feature|-|
+|#2|Second feature|#1|
+|#3|Third feature|#2|
