@@ -47,3 +47,126 @@ pub fn log(graph: &Graph<Rc<PullRequest>, usize>) -> FlatDep {
 
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::{PullRequest, PullRequestStatus};
+
+    fn make_pr(number: usize, head: &str, base: &str) -> Rc<PullRequest> {
+        Rc::new(PullRequest::new_for_test(
+            number,
+            head,
+            base,
+            &format!("PR #{}", number),
+            PullRequestStatus::Open,
+            false,
+            None,
+            vec![],
+        ))
+    }
+
+    #[test]
+    fn test_build_empty_graph() {
+        let prs: Vec<Rc<PullRequest>> = vec![];
+        let graph = build(&prs);
+        assert_eq!(graph.node_count(), 0);
+        assert_eq!(graph.edge_count(), 0);
+    }
+
+    #[test]
+    fn test_build_single_pr() {
+        let prs = vec![make_pr(1, "feature-1", "main")];
+        let graph = build(&prs);
+        assert_eq!(graph.node_count(), 1);
+        assert_eq!(graph.edge_count(), 0); // No edge since base "main" is not a PR
+    }
+
+    #[test]
+    fn test_build_linear_stack() {
+        // PR 1: feature-1 -> main
+        // PR 2: feature-2 -> feature-1
+        // PR 3: feature-3 -> feature-2
+        let prs = vec![
+            make_pr(1, "feature-1", "main"),
+            make_pr(2, "feature-2", "feature-1"),
+            make_pr(3, "feature-3", "feature-2"),
+        ];
+        let graph = build(&prs);
+        assert_eq!(graph.node_count(), 3);
+        assert_eq!(graph.edge_count(), 2); // feature-1 -> feature-2, feature-2 -> feature-3
+    }
+
+    #[test]
+    fn test_build_branching_stack() {
+        // PR 1: feature-1 -> main
+        // PR 2: feature-2a -> feature-1
+        // PR 3: feature-2b -> feature-1 (branching)
+        let prs = vec![
+            make_pr(1, "feature-1", "main"),
+            make_pr(2, "feature-2a", "feature-1"),
+            make_pr(3, "feature-2b", "feature-1"),
+        ];
+        let graph = build(&prs);
+        assert_eq!(graph.node_count(), 3);
+        assert_eq!(graph.edge_count(), 2); // Both branch from feature-1
+    }
+
+    #[test]
+    fn test_log_linear_stack() {
+        let prs = vec![
+            make_pr(1, "feature-1", "main"),
+            make_pr(2, "feature-2", "feature-1"),
+            make_pr(3, "feature-3", "feature-2"),
+        ];
+        let graph = build(&prs);
+        let flat = log(&graph);
+
+        assert_eq!(flat.len(), 3);
+
+        // First PR should have no parent (base is main, not in stack)
+        assert!(flat.iter().any(|(pr, parent)| pr.number() == 1 && parent.is_none()));
+
+        // Second PR should have first as parent
+        assert!(flat
+            .iter()
+            .any(|(pr, parent)| pr.number() == 2 && parent.as_ref().map(|p| p.number()) == Some(1)));
+
+        // Third PR should have second as parent
+        assert!(flat
+            .iter()
+            .any(|(pr, parent)| pr.number() == 3 && parent.as_ref().map(|p| p.number()) == Some(2)));
+    }
+
+    #[test]
+    fn test_log_sorts_by_state() {
+        let open_pr = Rc::new(PullRequest::new_for_test(
+            1,
+            "feature-1",
+            "main",
+            "Open PR",
+            PullRequestStatus::Open,
+            false,
+            None,
+            vec![],
+        ));
+        let closed_pr = Rc::new(PullRequest::new_for_test(
+            2,
+            "feature-2",
+            "other",
+            "Closed PR",
+            PullRequestStatus::Closed,
+            false,
+            None,
+            vec![],
+        ));
+
+        let prs = vec![closed_pr, open_pr];
+        let graph = build(&prs);
+        let flat = log(&graph);
+
+        // Open PRs should come before Closed PRs after sorting
+        assert_eq!(flat[0].0.number(), 1); // Open PR first
+        assert_eq!(flat[1].0.number(), 2); // Closed PR second
+    }
+}

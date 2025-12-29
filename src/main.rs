@@ -163,7 +163,7 @@ fn remove_title_prefixes(title: String, prefix: &str) -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    dotenv::from_filename(".gh-stack.env").ok();
+    dotenvy::from_filename(".gh-stack.env").ok();
 
     let token = env::var("GHSTACK_OAUTH_TOKEN").expect("You didn't pass `GHSTACK_OAUTH_TOKEN`");
     // store the value of GHSTACK_TARGET_REPOSITORY

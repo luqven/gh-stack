@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+      - name: Run tests
+        run: cargo test
+
+  build-macos:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - name: Build x86_64
+        run: cargo build --release --target x86_64-apple-darwin
+      - name: Build arm64
+        run: cargo build --release --target aarch64-apple-darwin
+      - name: Create universal binary
+        run: |
+          lipo -create \
+            target/x86_64-apple-darwin/release/gh-stack \
+            target/aarch64-apple-darwin/release/gh-stack \
+            -output gh-stack
+      - name: Package
+        run: tar -czvf gh-stack-mac.tar.gz gh-stack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gh-stack-mac
+          path: gh-stack-mac.tar.gz
+
+  build-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+      - name: Package
+        run: tar -czvf gh-stack-linux.tar.gz -C target/release gh-stack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gh-stack-linux
+          path: gh-stack-linux.tar.gz
+
+  release:
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Get version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - uses: actions/download-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            gh-stack-mac/gh-stack-mac.tar.gz
+            gh-stack-linux/gh-stack-linux.tar.gz
+          generate_release_notes: true
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Download mac binary and get sha256
+        id: sha
+        run: |
+          curl -L -o gh-stack-mac.tar.gz \
+            "https://github.com/luqven/gh-stack/releases/download/${{ steps.version.outputs.version }}/gh-stack-mac.tar.gz"
+          SHA=$(shasum -a 256 gh-stack-mac.tar.gz | cut -d ' ' -f 1)
+          echo "sha256=$SHA" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+        with:
+          repository: luqven/homebrew-gh-stack
+          token: ${{ secrets.HOMEBREW_PAT }}
+          path: homebrew-gh-stack
+      - name: Update formula
+        run: |
+          cat > homebrew-gh-stack/Formula/gh-stack.rb << EOF
+          class GhStack < Formula
+            desc "Manage PR stacks/chains on Github"
+            homepage "https://github.com/luqven/gh-stack"
+            version "${{ steps.version.outputs.version }}"
+            url "https://github.com/luqven/gh-stack/releases/download/#{version}/gh-stack-mac.tar.gz"
+            sha256 "${{ steps.sha.outputs.sha256 }}"
+
+            def install
+              bin.install "gh-stack"
+            end
+          end
+          EOF
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.HOMEBREW_PAT }}
+          path: homebrew-gh-stack
+          commit-message: "bump gh-stack to ${{ steps.version.outputs.version }}"
+          title: "bump gh-stack to ${{ steps.version.outputs.version }}"
+          body: |
+            Automated PR to update gh-stack to ${{ steps.version.outputs.version }}
+            
+            Release: https://github.com/luqven/gh-stack/releases/tag/${{ steps.version.outputs.version }}
+          branch: "bump-${{ steps.version.outputs.version }}"
+          base: main
