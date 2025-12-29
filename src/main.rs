@@ -10,7 +10,7 @@ use gh_stack::api::PullRequest;
 use gh_stack::graph::FlatDep;
 use gh_stack::util::loop_until_confirm;
 use gh_stack::Credentials;
-use gh_stack::{api, git, graph, markdown, persist};
+use gh_stack::{api, git, graph, markdown, persist, tree};
 
 fn clap<'a, 'b>() -> App<'a, 'b> {
     let identifier = Arg::with_name("identifier")
@@ -56,11 +56,34 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
                 .help("Prepend the annotation with the contents of this file"));
 
     let log = SubCommand::with_name("log")
-        .about("Print a list of all pull requests in a stack to STDOUT")
+        .about("Print a visual tree of all pull requests in a stack")
         .setting(AppSettings::ArgRequiredElseHelp)
+        .arg(
+            Arg::with_name("mode")
+                .index(1)
+                .possible_values(&["short"])
+                .help("Output mode: omit for tree view, 'short' for compact list"),
+        )
+        .arg(identifier.clone().index(2))
         .arg(exclude.clone())
-        .arg(identifier.clone())
-        .arg(repository.clone());
+        .arg(repository.clone())
+        .arg(
+            Arg::with_name("project")
+                .long("project")
+                .short("C")
+                .value_name("PATH")
+                .help("Path to local repository (auto-detected if omitted)"),
+        )
+        .arg(
+            Arg::with_name("include-closed")
+                .long("include-closed")
+                .help("Show local branches whose remote PRs are closed or merged"),
+        )
+        .arg(
+            Arg::with_name("no-color")
+                .long("no-color")
+                .help("Disable colors and Unicode characters"),
+        );
 
     let autorebase = SubCommand::with_name("autorebase")
         .about("Rebuild a stack based on changes to local branches and mirror these changes up to the remote")
@@ -214,7 +237,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         ("log", Some(m)) => {
-            let identifier = m.value_of("identifier").unwrap();
+            // Handle both positional args: mode (optional) and identifier (required)
+            // If only one positional arg is given, it's the identifier
+            let (mode, identifier) = match (m.value_of("mode"), m.value_of("identifier")) {
+                (Some(mode), Some(id)) => (Some(mode), id),
+                (Some(id), None) => (None, id), // "mode" position actually has the identifier
+                (None, Some(id)) => (None, id),
+                (None, None) => {
+                    panic!("You must provide an identifier to search for");
+                }
+            };
+
             // replace it with the -r argument value if set
             let repository = m.value_of("repository").unwrap_or(&repository);
             // if repository is still unset, throw an error
@@ -233,18 +266,42 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 build_pr_stack_for_repo(identifier, repository, &credentials, get_excluded(m))
                     .await?;
 
-            for (pr, maybe_parent) in stack {
-                match maybe_parent {
-                    Some(parent) => {
-                        let into = style(format!("(Merges into #{})", parent.number())).green();
-                        println!("#{}: {} {}", pr.number(), pr.title(), into);
-                    }
+            // Check for empty stack
+            if stack.is_empty() {
+                println!("No PRs found matching '{}'", identifier);
+                return Ok(());
+            }
 
-                    None => {
-                        let into = style("(Base)").red();
-                        println!("#{}: {} {}", pr.number(), pr.title(), into);
+            // Check if "short" mode
+            if mode == Some("short") {
+                // Original flat output
+                for (pr, maybe_parent) in stack {
+                    match maybe_parent {
+                        Some(parent) => {
+                            let into = style(format!("(Merges into #{})", parent.number())).green();
+                            println!("#{}: {} {}", pr.number(), pr.title(), into);
+                        }
+
+                        None => {
+                            let into = style("(Base)").red();
+                            println!("#{}: {} {}", pr.number(), pr.title(), into);
+                        }
                     }
                 }
+            } else {
+                // New tree view (default)
+                let no_color = m.is_present("no-color");
+                let mut config = tree::TreeConfig::detect(no_color);
+                config.include_closed = m.is_present("include-closed");
+
+                let repo = m
+                    .value_of("project")
+                    .and_then(|p| Repository::open(p).ok())
+                    .or_else(tree::detect_repo);
+
+                let entries = tree::build_entries(&stack, repo.as_ref(), &config);
+                let output = tree::render(&entries, &config, repo.is_some());
+                print!("{}", output);
             }
         }
 
