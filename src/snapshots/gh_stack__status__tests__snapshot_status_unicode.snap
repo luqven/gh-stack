@@ -1,0 +1,8 @@
+---
+source: src/status.rs
+expression: output
+---
+◉ feature-1 (current) #123 - Add feature
+│ [✓ ✗ ⏳ ─]
+│
+◯ main

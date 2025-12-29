@@ -1,0 +1,9 @@
+---
+source: src/status.rs
+expression: output
+---
+* feature-2 (current) #124 - Add new feature
+|
+o feature-1 #123 - Setup base
+|
+o main

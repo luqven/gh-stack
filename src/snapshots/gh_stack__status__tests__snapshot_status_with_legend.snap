@@ -1,0 +1,11 @@
+---
+source: src/status.rs
+expression: output
+---
+o feature-1 #123 - Add feature
+| [Y Y Y Y]
+|
+o main
+
+Status: [CI | Approved | Mergeable | Stack]
+  Y=pass  N=fail  ?=pending  -=n/a

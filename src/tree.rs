@@ -55,7 +55,7 @@ pub enum PrState {
 }
 
 /// Information about a single commit
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct CommitInfo {
     pub sha: String,
     pub message: String,

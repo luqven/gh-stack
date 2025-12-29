@@ -21,6 +21,7 @@ petgraph = "0.6"
 regex = "1"
 git2 = { version = "0.18", default-features = false }
 dialoguer = "0.11"
+dirs = "5"
 clap = "2.34"
 console = "0.15"
 dotenvy = "0.15"
@@ -31,4 +32,5 @@ chrono = { version = "0.4", features = ["serde"] }
 insta = "1.39"
 mockito = "1.4"
 serial_test = "3.1"
+tempfile = "3"
 tokio-test = "0.4"

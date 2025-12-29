@@ -1,0 +1,30 @@
+---
+source: src/status.rs
+expression: output
+---
+{
+  "stack": [
+    {
+      "branch": "feature-1",
+      "pr_number": 123,
+      "title": "Add feature",
+      "is_current": true,
+      "is_draft": false,
+      "is_trunk": false,
+      "status": {
+        "ci": "passed",
+        "approved": "passed",
+        "mergeable": "passed",
+        "stack_clear": "passed"
+      },
+      "updated_at": "2024-01-15T10:30:00Z",
+      "commits": [
+        {
+          "sha": "abc1234",
+          "message": "Add widget"
+        }
+      ]
+    }
+  ],
+  "trunk": "main"
+}

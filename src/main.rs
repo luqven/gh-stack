@@ -9,6 +9,7 @@ use std::rc::Rc;
 use gh_stack::api::PullRequest;
 use gh_stack::graph::FlatDep;
 use gh_stack::land::{self, LandError, LandOptions};
+use gh_stack::status::{self, StatusConfig};
 use gh_stack::util::loop_until_confirm;
 use gh_stack::Credentials;
 use gh_stack::{api, git, graph, markdown, persist, tree};
@@ -100,6 +101,51 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
             Arg::with_name("no-color")
                 .long("no-color")
                 .help("Disable colors and Unicode characters"),
+        )
+        .arg(
+            Arg::with_name("status")
+                .long("status")
+                .takes_value(false)
+                .help("Show status bits (CI, approval, conflicts, stack health)"),
+        );
+
+    let status_cmd = SubCommand::with_name("status")
+        .about("Show stack status with CI, approval, and merge readiness indicators")
+        .setting(AppSettings::ArgRequiredElseHelp)
+        .arg(identifier.clone())
+        .arg(exclude.clone())
+        .arg(repository.clone())
+        .arg(origin.clone())
+        .arg(
+            Arg::with_name("project")
+                .long("project")
+                .short("C")
+                .value_name("PATH")
+                .help("Path to local repository (auto-detected if omitted)"),
+        )
+        .arg(
+            Arg::with_name("no-checks")
+                .long("no-checks")
+                .takes_value(false)
+                .help("Skip fetching CI/approval/conflict status from GitHub"),
+        )
+        .arg(
+            Arg::with_name("no-color")
+                .long("no-color")
+                .takes_value(false)
+                .help("Disable colors and Unicode characters"),
+        )
+        .arg(
+            Arg::with_name("help-legend")
+                .long("help-legend")
+                .takes_value(false)
+                .help("Show status bits legend"),
+        )
+        .arg(
+            Arg::with_name("json")
+                .long("json")
+                .takes_value(false)
+                .help("Output in JSON format"),
         );
 
     let autorebase = SubCommand::with_name("autorebase")
@@ -169,7 +215,8 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
         .subcommand(log)
         .subcommand(rebase)
         .subcommand(autorebase)
-        .subcommand(land);
+        .subcommand(land)
+        .subcommand(status_cmd);
 
     app
 }
@@ -343,8 +390,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 return Ok(());
             }
 
-            // Check if "short" mode
-            if m.is_present("short") {
+            // Check if --status flag is set (delegate to status handler)
+            if m.is_present("status") {
+                let no_color = m.is_present("no-color");
+                let show_legend = status::should_show_legend();
+
+                let config = StatusConfig {
+                    use_color: !no_color,
+                    use_unicode: !no_color,
+                    show_legend,
+                    include_checks: true,
+                    json_output: false,
+                };
+
+                let repo = m
+                    .value_of("project")
+                    .and_then(|p| Repository::open(p).ok())
+                    .or_else(tree::detect_repo);
+
+                let entries = status::build_status_entries(
+                    &stack,
+                    repo.as_ref(),
+                    &repository,
+                    &credentials,
+                    &config,
+                )
+                .await;
+
+                let output = status::render_status(&entries, &config, repo.is_some());
+                print!("{}", output);
+
+                // Mark legend as seen after first display
+                if show_legend {
+                    status::mark_legend_seen();
+                }
+            } else if m.is_present("short") {
                 // Original flat output
                 for (pr, maybe_parent) in stack {
                     match maybe_parent {
@@ -528,6 +608,90 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Err(e) => {
                     eprintln!("\n{} {}", style("Error:").red().bold(), e);
                     std::process::exit(1);
+                }
+            }
+        }
+
+        ("status", Some(m)) => {
+            let identifier = m.value_of("identifier").unwrap();
+
+            // resolve repository with fallback chain
+            let remote_name = m.value_of("origin").unwrap_or("origin");
+            let repository = resolve_repository(m.value_of("repository"), &repository, remote_name)
+                .unwrap_or_else(|e| panic!("{}", e));
+
+            let json_output = m.is_present("json");
+
+            if !json_output {
+                println!(
+                    "Searching for {} identifier in {} repo",
+                    style(identifier).bold(),
+                    style(&repository).bold()
+                );
+            }
+
+            let stack =
+                build_pr_stack_for_repo(identifier, &repository, &credentials, get_excluded(m))
+                    .await?;
+
+            // Check for empty stack
+            if stack.is_empty() {
+                if json_output {
+                    println!(r#"{{"stack": [], "trunk": "main"}}"#);
+                } else {
+                    println!("No PRs found matching '{}'", identifier);
+                }
+                return Ok(());
+            }
+
+            let no_color = m.is_present("no-color");
+            let no_checks = m.is_present("no-checks");
+            let help_legend = m.is_present("help-legend");
+
+            // Show legend on first run or if explicitly requested
+            let show_legend = help_legend || (!json_output && status::should_show_legend());
+
+            let config = StatusConfig {
+                use_color: !no_color && !json_output,
+                use_unicode: !no_color && !json_output,
+                show_legend,
+                include_checks: !no_checks,
+                json_output,
+            };
+
+            let repo = m
+                .value_of("project")
+                .and_then(|p| Repository::open(p).ok())
+                .or_else(tree::detect_repo);
+
+            let entries = status::build_status_entries(
+                &stack,
+                repo.as_ref(),
+                &repository,
+                &credentials,
+                &config,
+            )
+            .await;
+
+            if json_output {
+                match status::render_status_json(&entries) {
+                    Ok(json) => println!("{}", json),
+                    Err(e) => {
+                        eprintln!(
+                            "{} Failed to serialize JSON: {}",
+                            style("Error:").red().bold(),
+                            e
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                let output = status::render_status(&entries, &config, repo.is_some());
+                print!("{}", output);
+
+                // Mark legend as seen after first display
+                if show_legend && !help_legend {
+                    status::mark_legend_seen();
                 }
             }
         }
