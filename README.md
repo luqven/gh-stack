@@ -11,6 +11,14 @@ Manage stacked pull requests on GitHub.
 - **Rebase** entire stacks after local changes
 - **Land** a stack by squash-merging the top PR and closing the rest
 
+## Why Stacked PRs?
+
+- **Smaller reviews** — Break large changes into reviewable chunks
+- **Faster iteration** — Start work on part 2 while part 1 is in review
+- **Cleaner history** — Each PR tells a focused story
+
+GitHub doesn't natively support stacked PRs — `gh-stack` fills that gap.
+
 ## Installation
 
 ```bash
