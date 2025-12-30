@@ -146,7 +146,7 @@ gh-stack rebase 'STACK-ID' > rebase.sh
 2. Push and create PRs with a shared identifier (e.g., `[TICKET-123]`)
 3. Set each PR's base to the branch below it
 4. Use `gh-stack annotate` to add stack tables
-5. After rebasing, use `gh-stack autorebase` to sync
+5. Use `gh-stack autorebase` to sync
 6. Use `gh-stack land` when ready to merge
 
 ## Requirements
