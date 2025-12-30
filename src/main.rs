@@ -4,15 +4,17 @@ use git2::Repository;
 use regex::Regex;
 use std::env;
 use std::error::Error;
+use std::io::IsTerminal;
 use std::rc::Rc;
 
 use gh_stack::api::PullRequest;
 use gh_stack::graph::FlatDep;
+use gh_stack::identifier::{self, StackSummary, TrunkAction};
 use gh_stack::land::{self, LandError, LandOptions};
 use gh_stack::status::{self, StatusConfig};
 use gh_stack::util::loop_until_confirm;
 use gh_stack::Credentials;
-use gh_stack::{api, git, graph, markdown, persist, tree};
+use gh_stack::{api, browser, git, graph, markdown, persist, tree};
 
 fn clap<'a, 'b>() -> App<'a, 'b> {
     let identifier = Arg::with_name("identifier")
@@ -71,13 +73,44 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
                 .value_name("FILE")
                 .help("Prepend the annotation with the contents of this file"));
 
+    // For log command, identifier is optional (can infer from branch)
+    let log_identifier = Arg::with_name("identifier")
+        .index(1)
+        .required(false)
+        .help("Stack identifier in PR titles (optional - infers from current branch if omitted)");
+
     let log = SubCommand::with_name("log")
         .about("Print a visual tree of all pull requests in a stack")
-        .setting(AppSettings::ArgRequiredElseHelp)
-        .arg(identifier.clone())
+        .arg(log_identifier)
         .arg(exclude.clone())
         .arg(repository.clone())
         .arg(origin.clone())
+        .arg(
+            Arg::with_name("branch")
+                .long("branch")
+                .short("b")
+                .takes_value(true)
+                .help("Infer stack from this branch instead of current branch"),
+        )
+        .arg(
+            Arg::with_name("all")
+                .long("all")
+                .short("a")
+                .takes_value(false)
+                .help("List all detected stacks and select interactively"),
+        )
+        .arg(
+            Arg::with_name("ci")
+                .long("ci")
+                .takes_value(false)
+                .help("Non-interactive mode for CI (requires identifier or --branch)"),
+        )
+        .arg(
+            Arg::with_name("trunk")
+                .long("trunk")
+                .takes_value(true)
+                .help("Trunk branch name (default: auto-detect or 'main')"),
+        )
         .arg(
             Arg::with_name("short")
                 .long("short")
@@ -107,15 +140,52 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
                 .long("status")
                 .takes_value(false)
                 .help("Show status bits (CI, approval, conflicts, stack health)"),
+        )
+        .arg(
+            Arg::with_name("create-pr")
+                .long("create-pr")
+                .takes_value(false)
+                .help("Create PR via GitHub API if branch has no PR"),
         );
+
+    // For status command, identifier is optional (can infer from branch)
+    let status_identifier = Arg::with_name("identifier")
+        .index(1)
+        .required(false)
+        .help("Stack identifier in PR titles (optional - infers from current branch if omitted)");
 
     let status_cmd = SubCommand::with_name("status")
         .about("Show stack status with CI, approval, and merge readiness indicators")
-        .setting(AppSettings::ArgRequiredElseHelp)
-        .arg(identifier.clone())
+        .arg(status_identifier)
         .arg(exclude.clone())
         .arg(repository.clone())
         .arg(origin.clone())
+        .arg(
+            Arg::with_name("branch")
+                .long("branch")
+                .short("b")
+                .takes_value(true)
+                .help("Infer stack from this branch instead of current branch"),
+        )
+        .arg(
+            Arg::with_name("all")
+                .long("all")
+                .short("a")
+                .takes_value(false)
+                .help("List all detected stacks and select interactively"),
+        )
+        .arg(
+            Arg::with_name("ci")
+                .long("ci")
+                .takes_value(false)
+                .help("Non-interactive mode for CI (requires identifier or --branch)"),
+        )
+        .arg(
+            Arg::with_name("trunk")
+                .long("trunk")
+                .takes_value(true)
+                .help("Trunk branch name (default: auto-detect or 'main')"),
+        )
         .arg(
             Arg::with_name("project")
                 .long("project")
@@ -146,6 +216,12 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
                 .long("json")
                 .takes_value(false)
                 .help("Output in JSON format"),
+        )
+        .arg(
+            Arg::with_name("create-pr")
+                .long("create-pr")
+                .takes_value(false)
+                .help("Create PR via GitHub API if branch has no PR"),
         );
 
     let autorebase = SubCommand::with_name("autorebase")
@@ -310,6 +386,102 @@ fn remove_title_prefixes(title: String, prefix: &str) -> String {
     regex.replace_all(&title, "").into_owned()
 }
 
+/// Get GitHub host URL from repository's git remote
+fn get_github_host(repo: Option<&Repository>, remote_name: &str) -> String {
+    repo.and_then(|r| tree::get_remote_url(r, remote_name))
+        .and_then(|url| browser::parse_github_host(&url))
+        .unwrap_or_else(|| "https://github.com".to_string())
+}
+
+/// Poll for PR existence with timeout
+async fn wait_for_pr(
+    repository: &str,
+    branch: &str,
+    credentials: &Credentials,
+    timeout_secs: u64,
+) -> Option<PullRequest> {
+    use std::time::{Duration, Instant};
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+    let poll_interval = Duration::from_secs(2);
+
+    println!("Waiting for PR to be created...");
+
+    while start.elapsed() < timeout {
+        if let Ok(Some(pr)) = api::stack::fetch_pr_by_head(repository, branch, credentials).await {
+            println!("Found PR #{}!", pr.number());
+            return Some(pr);
+        }
+        print!(".");
+        use std::io::Write;
+        std::io::stdout().flush().ok();
+        tokio::time::sleep(poll_interval).await;
+    }
+    println!();
+
+    None
+}
+
+/// Create a PR via GitHub API with interactive prompts for title/body
+async fn create_pr_interactive(
+    repository: &str,
+    head: &str,
+    base: &str,
+    repo: Option<&Repository>,
+    identifier: Option<&str>,
+    credentials: &Credentials,
+    ci_mode: bool,
+) -> Result<(usize, String), Box<dyn Error>> {
+    use dialoguer::Input;
+
+    // Get default title from first commit message
+    let default_title = repo
+        .and_then(|r| tree::first_commit_message(r, head, base))
+        .unwrap_or_else(|| head.to_string());
+
+    // Add identifier prefix if we have one
+    let default_title = if let Some(id) = identifier {
+        format!("[{}] {}", id, default_title)
+    } else {
+        default_title
+    };
+
+    // Get default body with stack marker
+    let default_body = format!("<!-- gh-stack:[{}] -->", identifier.unwrap_or(""));
+
+    let (title, body) = if ci_mode || !std::io::stdout().is_terminal() {
+        // Non-interactive: use defaults
+        (default_title, default_body)
+    } else {
+        // Interactive: prompt for title and body
+        let title: String = Input::new()
+            .with_prompt("PR title")
+            .default(default_title)
+            .interact_text()?;
+
+        let body: String = Input::new()
+            .with_prompt("PR body (optional)")
+            .default(default_body)
+            .allow_empty(true)
+            .interact_text()?;
+
+        (title, body)
+    };
+
+    println!("\nCreating PR...");
+    let body_opt = if body.is_empty() {
+        None
+    } else {
+        Some(body.as_str())
+    };
+    let (pr_num, url) =
+        api::create::create_pr(repository, head, base, &title, body_opt, credentials).await?;
+    println!("Created: {} (PR #{})\n", style(&url).cyan(), pr_num);
+
+    Ok((pr_num, url))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenvy::from_filename(".gh-stack.env").ok();
@@ -368,29 +540,291 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         ("log", Some(m)) => {
-            let identifier = m.value_of("identifier").unwrap();
+            let explicit_identifier = m.value_of("identifier");
+            let branch_override = m.value_of("branch");
+            let show_all = m.is_present("all");
+            let ci_mode = m.is_present("ci");
 
-            // resolve repository with fallback chain
+            // Resolve trunk branch
+            let trunk = m
+                .value_of("trunk")
+                .map(String::from)
+                .or_else(identifier::detect_trunk_branch)
+                .unwrap_or_else(|| "main".to_string());
+
+            // Resolve repository with fallback chain
             let remote_name = m.value_of("origin").unwrap_or("origin");
             let repository = resolve_repository(m.value_of("repository"), &repository, remote_name)
                 .unwrap_or_else(|e| panic!("{}", e));
 
-            println!(
-                "Searching for {} identifier in {} repo",
-                style(identifier).bold(),
-                style(&repository).bold()
-            );
-            let stack =
-                build_pr_stack_for_repo(identifier, &repository, &credentials, get_excluded(m))
-                    .await?;
+            // Determine how to find the stack
+            let stack: FlatDep = if let Some(id) = explicit_identifier {
+                // === EXISTING BEHAVIOR: Search by identifier ===
+                println!(
+                    "Searching for {} identifier in {} repo",
+                    style(id).bold(),
+                    style(&repository).bold()
+                );
+                build_pr_stack_for_repo(id, &repository, &credentials, get_excluded(m)).await?
+            } else if show_all {
+                // === NEW: --all flag - show all stacks ===
+                if ci_mode {
+                    eprintln!(
+                        "{} --all requires interactive mode (incompatible with --ci)",
+                        style("Error:").red().bold()
+                    );
+                    std::process::exit(1);
+                }
+
+                println!("Discovering stacks in {}...", style(&repository).bold());
+
+                let stacks =
+                    api::stack::discover_all_stacks(&repository, &trunk, &credentials).await?;
+
+                if stacks.is_empty() {
+                    println!("No open stacks found.");
+                    return Ok(());
+                }
+
+                let summaries: Vec<StackSummary> = stacks
+                    .iter()
+                    .map(|s| StackSummary::from_prs(s, &trunk))
+                    .collect();
+
+                let selected = identifier::prompt_select_stack(&summaries)?;
+
+                // Convert selected stack to FlatDep
+                let prs: Vec<Rc<PullRequest>> =
+                    stacks[selected].iter().cloned().map(Rc::new).collect();
+                let g = graph::build(&prs);
+                graph::log(&g)
+            } else {
+                // === NEW: Infer from current/specified branch ===
+                let repo_handle = m
+                    .value_of("project")
+                    .and_then(|p| Repository::open(p).ok())
+                    .or_else(tree::detect_repo);
+
+                let branch = branch_override
+                    .map(String::from)
+                    .or_else(|| repo_handle.as_ref().and_then(tree::current_branch));
+
+                match branch {
+                    Some(branch) => {
+                        // Check if on trunk
+                        if identifier::is_trunk_branch(&branch, Some(&trunk)) {
+                            if ci_mode {
+                                eprintln!(
+                                    "{} On trunk branch '{}'. Provide an identifier or use --branch.",
+                                    style("Error:").red().bold(),
+                                    branch
+                                );
+                                std::process::exit(1);
+                            }
+
+                            println!("You're on '{}' (trunk branch).\n", style(&branch).cyan());
+
+                            // Discover all stacks for selection
+                            let stacks =
+                                api::stack::discover_all_stacks(&repository, &trunk, &credentials)
+                                    .await?;
+
+                            let summaries: Vec<StackSummary> = stacks
+                                .iter()
+                                .map(|s| StackSummary::from_prs(s, &trunk))
+                                .collect();
+
+                            match identifier::prompt_trunk_action(&summaries)? {
+                                TrunkAction::EnterIdentifier(id) => {
+                                    println!(
+                                        "\nSearching for {} identifier in {} repo",
+                                        style(&id).bold(),
+                                        style(&repository).bold()
+                                    );
+                                    build_pr_stack_for_repo(
+                                        &id,
+                                        &repository,
+                                        &credentials,
+                                        get_excluded(m),
+                                    )
+                                    .await?
+                                }
+                                TrunkAction::SelectStack(idx) => {
+                                    let prs: Vec<Rc<PullRequest>> =
+                                        stacks[idx].iter().cloned().map(Rc::new).collect();
+                                    let g = graph::build(&prs);
+                                    graph::log(&g)
+                                }
+                                TrunkAction::Cancel => {
+                                    return Ok(());
+                                }
+                            }
+                        } else {
+                            // Discover stack from branch
+                            println!(
+                                "Discovering stack for branch '{}'...",
+                                style(&branch).cyan()
+                            );
+
+                            match api::stack::fetch_pr_by_head(&repository, &branch, &credentials)
+                                .await?
+                            {
+                                Some(pr) => {
+                                    let prs = api::stack::discover_stack(
+                                        &repository,
+                                        pr,
+                                        &trunk,
+                                        &credentials,
+                                    )
+                                    .await?;
+                                    let prs: Vec<Rc<PullRequest>> =
+                                        prs.into_iter().map(Rc::new).collect();
+                                    let g = graph::build(&prs);
+                                    graph::log(&g)
+                                }
+                                None => {
+                                    // No PR found for this branch
+                                    let create_pr_flag = m.is_present("create-pr");
+                                    let github_host =
+                                        get_github_host(repo_handle.as_ref(), remote_name);
+
+                                    if create_pr_flag {
+                                        // Create PR via API
+                                        let (_pr_num, _url) = create_pr_interactive(
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                            repo_handle.as_ref(),
+                                            None, // No identifier known
+                                            &credentials,
+                                            ci_mode,
+                                        )
+                                        .await?;
+
+                                        // Retry discovery
+                                        println!("Retrying stack discovery...");
+                                        if let Some(pr) = api::stack::fetch_pr_by_head(
+                                            &repository,
+                                            &branch,
+                                            &credentials,
+                                        )
+                                        .await?
+                                        {
+                                            let prs = api::stack::discover_stack(
+                                                &repository,
+                                                pr,
+                                                &trunk,
+                                                &credentials,
+                                            )
+                                            .await?;
+                                            let prs: Vec<Rc<PullRequest>> =
+                                                prs.into_iter().map(Rc::new).collect();
+                                            let g = graph::build(&prs);
+                                            graph::log(&g)
+                                        } else {
+                                            eprintln!("PR creation succeeded but could not find PR. Try again.");
+                                            return Ok(());
+                                        }
+                                    } else if ci_mode {
+                                        // CI mode without --create-pr: print URL and exit
+                                        eprintln!(
+                                            "{} No PR found for branch '{}'",
+                                            style("Error:").red().bold(),
+                                            branch
+                                        );
+                                        browser::suggest_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        );
+                                        std::process::exit(1);
+                                    } else if std::io::stdout().is_terminal() {
+                                        // Interactive: prompt to open browser
+                                        if browser::prompt_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        )? {
+                                            // Poll for PR creation
+                                            if let Some(pr) =
+                                                wait_for_pr(&repository, &branch, &credentials, 30)
+                                                    .await
+                                            {
+                                                println!("\nRetrying stack discovery...");
+                                                let prs = api::stack::discover_stack(
+                                                    &repository,
+                                                    pr,
+                                                    &trunk,
+                                                    &credentials,
+                                                )
+                                                .await?;
+                                                let prs: Vec<Rc<PullRequest>> =
+                                                    prs.into_iter().map(Rc::new).collect();
+                                                let g = graph::build(&prs);
+                                                graph::log(&g)
+                                            } else {
+                                                eprintln!("\nTimed out waiting for PR. Run the command again after creating the PR.");
+                                                return Ok(());
+                                            }
+                                        } else {
+                                            return Ok(());
+                                        }
+                                    } else {
+                                        // Non-interactive, non-CI: just print URL
+                                        browser::suggest_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        );
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        // Could not determine branch
+                        if ci_mode {
+                            eprintln!(
+                                "{} Could not determine current branch. Provide identifier or --branch.",
+                                style("Error:").red().bold()
+                            );
+                            std::process::exit(1);
+                        }
+
+                        eprintln!(
+                            "{} Could not determine current branch.\n",
+                            style("Note:").yellow()
+                        );
+                        eprintln!("You can:");
+                        eprintln!("  - Run from inside a git repository");
+                        eprintln!(
+                            "  - Use {} to specify a branch",
+                            style("--branch <name>").cyan()
+                        );
+                        eprintln!(
+                            "  - Provide an identifier directly: {}",
+                            style("gh-stack log 'STACK-ID'").cyan()
+                        );
+                        return Ok(());
+                    }
+                }
+            };
 
             // Check for empty stack
             if stack.is_empty() {
-                println!("No PRs found matching '{}'", identifier);
+                if let Some(id) = explicit_identifier {
+                    println!("No PRs found matching '{}'", id);
+                } else {
+                    println!("No PRs found in stack.");
+                }
                 return Ok(());
             }
 
-            // Check if --status flag is set (delegate to status handler)
+            // === DISPLAY LOGIC (unchanged) ===
             if m.is_present("status") {
                 let no_color = m.is_present("no-color");
                 let show_legend = status::should_show_legend();
@@ -440,7 +874,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             } else {
-                // New tree view (default)
+                // Tree view (default)
                 let no_color = m.is_present("no-color");
                 let mut config = tree::TreeConfig::detect(no_color);
                 config.include_closed = m.is_present("include-closed");
@@ -613,33 +1047,326 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         ("status", Some(m)) => {
-            let identifier = m.value_of("identifier").unwrap();
+            let explicit_identifier = m.value_of("identifier");
+            let branch_override = m.value_of("branch");
+            let show_all = m.is_present("all");
+            let ci_mode = m.is_present("ci");
+            let json_output = m.is_present("json");
 
-            // resolve repository with fallback chain
+            // Resolve trunk branch
+            let trunk = m
+                .value_of("trunk")
+                .map(String::from)
+                .or_else(identifier::detect_trunk_branch)
+                .unwrap_or_else(|| "main".to_string());
+
+            // Resolve repository with fallback chain
             let remote_name = m.value_of("origin").unwrap_or("origin");
             let repository = resolve_repository(m.value_of("repository"), &repository, remote_name)
                 .unwrap_or_else(|e| panic!("{}", e));
 
-            let json_output = m.is_present("json");
+            // Determine how to find the stack
+            let stack: FlatDep = if let Some(id) = explicit_identifier {
+                // === EXISTING BEHAVIOR: Search by identifier ===
+                if !json_output {
+                    println!(
+                        "Searching for {} identifier in {} repo",
+                        style(id).bold(),
+                        style(&repository).bold()
+                    );
+                }
+                build_pr_stack_for_repo(id, &repository, &credentials, get_excluded(m)).await?
+            } else if show_all {
+                // === NEW: --all flag - show all stacks ===
+                if ci_mode {
+                    eprintln!(
+                        "{} --all requires interactive mode (incompatible with --ci)",
+                        style("Error:").red().bold()
+                    );
+                    std::process::exit(1);
+                }
 
-            if !json_output {
-                println!(
-                    "Searching for {} identifier in {} repo",
-                    style(identifier).bold(),
-                    style(&repository).bold()
-                );
-            }
+                if !json_output {
+                    println!("Discovering stacks in {}...", style(&repository).bold());
+                }
 
-            let stack =
-                build_pr_stack_for_repo(identifier, &repository, &credentials, get_excluded(m))
-                    .await?;
+                let stacks =
+                    api::stack::discover_all_stacks(&repository, &trunk, &credentials).await?;
+
+                if stacks.is_empty() {
+                    if json_output {
+                        println!(r#"{{"stack": [], "trunk": "{}"}}"#, trunk);
+                    } else {
+                        println!("No open stacks found.");
+                    }
+                    return Ok(());
+                }
+
+                let summaries: Vec<StackSummary> = stacks
+                    .iter()
+                    .map(|s| StackSummary::from_prs(s, &trunk))
+                    .collect();
+
+                let selected = identifier::prompt_select_stack(&summaries)?;
+
+                // Convert selected stack to FlatDep
+                let prs: Vec<Rc<PullRequest>> =
+                    stacks[selected].iter().cloned().map(Rc::new).collect();
+                let g = graph::build(&prs);
+                graph::log(&g)
+            } else {
+                // === NEW: Infer from current/specified branch ===
+                let repo_handle = m
+                    .value_of("project")
+                    .and_then(|p| Repository::open(p).ok())
+                    .or_else(tree::detect_repo);
+
+                let branch = branch_override
+                    .map(String::from)
+                    .or_else(|| repo_handle.as_ref().and_then(tree::current_branch));
+
+                match branch {
+                    Some(branch) => {
+                        // Check if on trunk
+                        if identifier::is_trunk_branch(&branch, Some(&trunk)) {
+                            if ci_mode {
+                                eprintln!(
+                                    "{} On trunk branch '{}'. Provide an identifier or use --branch.",
+                                    style("Error:").red().bold(),
+                                    branch
+                                );
+                                std::process::exit(1);
+                            }
+
+                            if !json_output {
+                                println!("You're on '{}' (trunk branch).\n", style(&branch).cyan());
+                            }
+
+                            // Discover all stacks for selection
+                            let stacks =
+                                api::stack::discover_all_stacks(&repository, &trunk, &credentials)
+                                    .await?;
+
+                            let summaries: Vec<StackSummary> = stacks
+                                .iter()
+                                .map(|s| StackSummary::from_prs(s, &trunk))
+                                .collect();
+
+                            match identifier::prompt_trunk_action(&summaries)? {
+                                TrunkAction::EnterIdentifier(id) => {
+                                    if !json_output {
+                                        println!(
+                                            "\nSearching for {} identifier in {} repo",
+                                            style(&id).bold(),
+                                            style(&repository).bold()
+                                        );
+                                    }
+                                    build_pr_stack_for_repo(
+                                        &id,
+                                        &repository,
+                                        &credentials,
+                                        get_excluded(m),
+                                    )
+                                    .await?
+                                }
+                                TrunkAction::SelectStack(idx) => {
+                                    let prs: Vec<Rc<PullRequest>> =
+                                        stacks[idx].iter().cloned().map(Rc::new).collect();
+                                    let g = graph::build(&prs);
+                                    graph::log(&g)
+                                }
+                                TrunkAction::Cancel => {
+                                    return Ok(());
+                                }
+                            }
+                        } else {
+                            // Discover stack from branch
+                            if !json_output {
+                                println!(
+                                    "Discovering stack for branch '{}'...",
+                                    style(&branch).cyan()
+                                );
+                            }
+
+                            match api::stack::fetch_pr_by_head(&repository, &branch, &credentials)
+                                .await?
+                            {
+                                Some(pr) => {
+                                    let prs = api::stack::discover_stack(
+                                        &repository,
+                                        pr,
+                                        &trunk,
+                                        &credentials,
+                                    )
+                                    .await?;
+                                    let prs: Vec<Rc<PullRequest>> =
+                                        prs.into_iter().map(Rc::new).collect();
+                                    let g = graph::build(&prs);
+                                    graph::log(&g)
+                                }
+                                None => {
+                                    // No PR found for this branch
+                                    let create_pr_flag = m.is_present("create-pr");
+                                    let github_host =
+                                        get_github_host(repo_handle.as_ref(), remote_name);
+
+                                    if create_pr_flag {
+                                        // Create PR via API
+                                        let (_pr_num, _url) = create_pr_interactive(
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                            repo_handle.as_ref(),
+                                            None, // No identifier known
+                                            &credentials,
+                                            ci_mode,
+                                        )
+                                        .await?;
+
+                                        // Retry discovery
+                                        if !json_output {
+                                            println!("Retrying stack discovery...");
+                                        }
+                                        if let Some(pr) = api::stack::fetch_pr_by_head(
+                                            &repository,
+                                            &branch,
+                                            &credentials,
+                                        )
+                                        .await?
+                                        {
+                                            let prs = api::stack::discover_stack(
+                                                &repository,
+                                                pr,
+                                                &trunk,
+                                                &credentials,
+                                            )
+                                            .await?;
+                                            let prs: Vec<Rc<PullRequest>> =
+                                                prs.into_iter().map(Rc::new).collect();
+                                            let g = graph::build(&prs);
+                                            graph::log(&g)
+                                        } else {
+                                            if json_output {
+                                                println!(
+                                                    r#"{{"error": "PR created but not found", "stack": [], "trunk": "{}"}}"#,
+                                                    trunk
+                                                );
+                                            } else {
+                                                eprintln!("PR creation succeeded but could not find PR. Try again.");
+                                            }
+                                            return Ok(());
+                                        }
+                                    } else if ci_mode || json_output {
+                                        // CI/JSON mode without --create-pr
+                                        if json_output {
+                                            println!(
+                                                r#"{{"error": "No PR found for branch '{}'", "stack": [], "trunk": "{}"}}"#,
+                                                branch, trunk
+                                            );
+                                        } else {
+                                            eprintln!(
+                                                "{} No PR found for branch '{}'",
+                                                style("Error:").red().bold(),
+                                                branch
+                                            );
+                                            browser::suggest_create_pr(
+                                                &github_host,
+                                                &repository,
+                                                &branch,
+                                                &trunk,
+                                            );
+                                        }
+                                        std::process::exit(1);
+                                    } else if std::io::stdout().is_terminal() {
+                                        // Interactive: prompt to open browser
+                                        if browser::prompt_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        )? {
+                                            // Poll for PR creation
+                                            if let Some(pr) =
+                                                wait_for_pr(&repository, &branch, &credentials, 30)
+                                                    .await
+                                            {
+                                                println!("\nRetrying stack discovery...");
+                                                let prs = api::stack::discover_stack(
+                                                    &repository,
+                                                    pr,
+                                                    &trunk,
+                                                    &credentials,
+                                                )
+                                                .await?;
+                                                let prs: Vec<Rc<PullRequest>> =
+                                                    prs.into_iter().map(Rc::new).collect();
+                                                let g = graph::build(&prs);
+                                                graph::log(&g)
+                                            } else {
+                                                eprintln!("\nTimed out waiting for PR. Run the command again after creating the PR.");
+                                                return Ok(());
+                                            }
+                                        } else {
+                                            return Ok(());
+                                        }
+                                    } else {
+                                        // Non-interactive: just print URL
+                                        browser::suggest_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        );
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        // Could not determine branch
+                        if ci_mode || json_output {
+                            if json_output {
+                                println!(
+                                    r#"{{"error": "Could not determine current branch", "stack": [], "trunk": "{}"}}"#,
+                                    trunk
+                                );
+                            } else {
+                                eprintln!(
+                                    "{} Could not determine current branch. Provide identifier or --branch.",
+                                    style("Error:").red().bold()
+                                );
+                            }
+                            std::process::exit(1);
+                        }
+
+                        eprintln!(
+                            "{} Could not determine current branch.\n",
+                            style("Note:").yellow()
+                        );
+                        eprintln!("You can:");
+                        eprintln!("  - Run from inside a git repository");
+                        eprintln!(
+                            "  - Use {} to specify a branch",
+                            style("--branch <name>").cyan()
+                        );
+                        eprintln!(
+                            "  - Provide an identifier directly: {}",
+                            style("gh-stack status 'STACK-ID'").cyan()
+                        );
+                        return Ok(());
+                    }
+                }
+            };
 
             // Check for empty stack
             if stack.is_empty() {
                 if json_output {
-                    println!(r#"{{"stack": [], "trunk": "main"}}"#);
+                    println!(r#"{{"stack": [], "trunk": "{}"}}"#, trunk);
+                } else if let Some(id) = explicit_identifier {
+                    println!("No PRs found matching '{}'", id);
                 } else {
-                    println!("No PRs found matching '{}'", identifier);
+                    println!("No PRs found in stack.");
                 }
                 return Ok(());
             }

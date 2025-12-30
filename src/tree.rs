@@ -115,6 +115,21 @@ pub fn branch_exists_locally(repo: &Repository, branch: &str) -> bool {
     repo.find_branch(branch, git2::BranchType::Local).is_ok()
 }
 
+/// Get git remote URL for a remote name
+pub fn get_remote_url(repo: &Repository, remote_name: &str) -> Option<String> {
+    repo.find_remote(remote_name).ok()?.url().map(String::from)
+}
+
+/// Get the first commit message between head and base branches
+///
+/// Returns the message of the oldest commit in the branch (first commit after
+/// diverging from base). Used as default PR title when creating via API.
+pub fn first_commit_message(repo: &Repository, head: &str, base: &str) -> Option<String> {
+    let (commits, _) = commits_for_branch(repo, head, base);
+    // Last in list is oldest (topological sort puts newest first)
+    commits.last().map(|c| c.message.clone())
+}
+
 /// Get commits between two branches (head..base exclusive)
 /// Returns up to MAX_COMMITS and count of extras
 pub fn commits_for_branch(repo: &Repository, head: &str, base: &str) -> (Vec<CommitInfo>, usize) {
@@ -1267,5 +1282,48 @@ mod tests {
     #[test]
     fn test_parse_github_remote_url_empty() {
         assert_eq!(parse_github_remote_url(""), None);
+    }
+
+    // Tests for first_commit_message - requires repo so tested indirectly via commits_for_branch
+    #[test]
+    fn test_first_commit_message_empty_commits() {
+        // When commits_for_branch returns empty, first_commit_message returns None
+        let commits: Vec<CommitInfo> = vec![];
+        assert_eq!(commits.last().map(|c| c.message.clone()), None);
+    }
+
+    #[test]
+    fn test_first_commit_message_single_commit() {
+        let commits = vec![CommitInfo {
+            sha: "abc1234".to_string(),
+            message: "Initial commit".to_string(),
+        }];
+        assert_eq!(
+            commits.last().map(|c| c.message.clone()),
+            Some("Initial commit".to_string())
+        );
+    }
+
+    #[test]
+    fn test_first_commit_message_multiple_commits() {
+        // Topological sort: newest first, so last is oldest
+        let commits = vec![
+            CommitInfo {
+                sha: "ccc3333".to_string(),
+                message: "Third commit".to_string(),
+            },
+            CommitInfo {
+                sha: "bbb2222".to_string(),
+                message: "Second commit".to_string(),
+            },
+            CommitInfo {
+                sha: "aaa1111".to_string(),
+                message: "First commit".to_string(),
+            },
+        ];
+        assert_eq!(
+            commits.last().map(|c| c.message.clone()),
+            Some("First commit".to_string())
+        );
     }
 }

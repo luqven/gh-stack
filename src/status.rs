@@ -2,9 +2,16 @@
 //!
 //! This module provides functionality to display stack status with CI, approval,
 //! merge, and stack health indicators.
+//!
+//! ## Performance
+//!
+//! Status checks are fetched in parallel using `futures::join_all` to minimize
+//! latency when checking multiple PRs.
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
+use futures::future::join_all;
 use git2::Repository;
 use serde::Serialize;
 
@@ -227,7 +234,42 @@ fn compute_stack_clear(entries: &[StatusEntry], index: usize) -> StatusBit {
     StatusBit::Passed
 }
 
+/// Intermediate data for building status entries
+struct PrCheckData {
+    pr: Rc<PullRequest>,
+    is_current: bool,
+    commits: Vec<CommitInfo>,
+    extra_commits: usize,
+}
+
+/// Fetch CI and mergeable status for a single PR
+async fn fetch_pr_status(
+    pr: &PullRequest,
+    repository: &str,
+    credentials: &Credentials,
+) -> (StatusBit, StatusBit) {
+    // Fetch CI status and mergeable status in parallel
+    let (ci_result, mergeable_result) = futures::join!(
+        fetch_check_status(pr.head_sha(), repository, credentials),
+        fetch_mergeable_status(pr.number(), repository, credentials)
+    );
+
+    let ci = match ci_result {
+        Ok(check) => check_status_to_bit(&check),
+        Err(_) => StatusBit::NotApplicable,
+    };
+
+    let mergeable = match mergeable_result {
+        Ok(m) => mergeable_to_bit(m),
+        Err(_) => StatusBit::NotApplicable,
+    };
+
+    (ci, mergeable)
+}
+
 /// Build status entries from a PR stack
+///
+/// Fetches CI and mergeable status for all PRs in parallel for better performance.
 pub async fn build_status_entries(
     stack: &FlatDep,
     repo: Option<&Repository>,
@@ -236,68 +278,78 @@ pub async fn build_status_entries(
     config: &StatusConfig,
 ) -> Vec<StatusEntry> {
     let current = repo.and_then(current_branch);
-    let mut entries = Vec::new();
 
     // Get trunk branch from first PR's base
     let trunk_branch = stack.first().map(|(pr, _)| pr.base().to_string());
 
-    // Process PRs in reverse order (top of stack first)
-    for (pr, _parent) in stack.iter().rev() {
-        // Skip closed/merged PRs
-        if pr.is_merged() || pr.state() == &crate::api::PullRequestStatus::Closed {
-            continue;
-        }
+    // Collect PR data (non-async operations)
+    let pr_data: Vec<PrCheckData> = stack
+        .iter()
+        .rev()
+        .filter(|(pr, _)| !pr.is_merged() && pr.state() != &crate::api::PullRequestStatus::Closed)
+        .map(|(pr, _)| {
+            let is_current = current.as_ref().is_some_and(|c| c == pr.head());
 
-        let is_current = current.as_ref().is_some_and(|c| c == pr.head());
-        let timestamp = pr.updated_at().and_then(parse_timestamp);
-
-        // Get commits if we have a repo
-        let (commits, extra_commits) = if let Some(r) = repo {
-            if branch_exists_locally(r, pr.head()) {
-                commits_for_branch(r, pr.head(), pr.base())
+            // Get commits if we have a repo
+            let (commits, extra_commits) = if let Some(r) = repo {
+                if branch_exists_locally(r, pr.head()) {
+                    commits_for_branch(r, pr.head(), pr.base())
+                } else {
+                    (vec![], 0)
+                }
             } else {
                 (vec![], 0)
+            };
+
+            PrCheckData {
+                pr: pr.clone(),
+                is_current,
+                commits,
+                extra_commits,
             }
-        } else {
-            (vec![], 0)
-        };
+        })
+        .collect();
 
-        // Fetch status if enabled
-        let status = if config.include_checks {
-            let ci = match fetch_check_status(pr.head_sha(), repository, credentials).await {
-                Ok(check) => check_status_to_bit(&check),
-                Err(_) => StatusBit::NotApplicable,
-            };
+    // Fetch status checks in parallel if enabled
+    let statuses: Vec<Option<(StatusBit, StatusBit)>> = if config.include_checks {
+        let futures: Vec<_> = pr_data
+            .iter()
+            .map(|data| fetch_pr_status(&data.pr, repository, credentials))
+            .collect();
 
-            let mergeable = match fetch_mergeable_status(pr.number(), repository, credentials).await
-            {
-                Ok(m) => mergeable_to_bit(m),
-                Err(_) => StatusBit::NotApplicable,
-            };
+        join_all(futures).await.into_iter().map(Some).collect()
+    } else {
+        vec![None; pr_data.len()]
+    };
 
-            Some(PrStatus {
+    // Build entries from collected data
+    let mut entries: Vec<StatusEntry> = pr_data
+        .into_iter()
+        .zip(statuses)
+        .map(|(data, status_bits)| {
+            let timestamp = data.pr.updated_at().and_then(parse_timestamp);
+
+            let status = status_bits.map(|(ci, mergeable)| PrStatus {
                 ci,
-                approved: approval_to_bit(pr),
+                approved: approval_to_bit(&data.pr),
                 mergeable,
                 stack_clear: StatusBit::Pending, // Will be computed after all entries are built
-            })
-        } else {
-            None
-        };
+            });
 
-        entries.push(StatusEntry {
-            branch: pr.head().to_string(),
-            pr_number: Some(pr.number()),
-            title: Some(truncate_title(pr.raw_title(), MAX_TITLE_LEN)),
-            is_current,
-            is_draft: pr.is_draft(),
-            is_trunk: false,
-            status,
-            updated_at: timestamp.map(|t| t.to_rfc3339()),
-            commits,
-            extra_commits,
-        });
-    }
+            StatusEntry {
+                branch: data.pr.head().to_string(),
+                pr_number: Some(data.pr.number()),
+                title: Some(truncate_title(data.pr.raw_title(), MAX_TITLE_LEN)),
+                is_current: data.is_current,
+                is_draft: data.pr.is_draft(),
+                is_trunk: false,
+                status,
+                updated_at: timestamp.map(|t| t.to_rfc3339()),
+                commits: data.commits,
+                extra_commits: data.extra_commits,
+            }
+        })
+        .collect();
 
     // Compute stack_clear for each entry (requires all entries to be built first)
     if config.include_checks {
