@@ -14,7 +14,7 @@ use gh_stack::land::{self, LandError, LandOptions};
 use gh_stack::status::{self, StatusConfig};
 use gh_stack::util::loop_until_confirm;
 use gh_stack::Credentials;
-use gh_stack::{api, gh_cli, git, graph, markdown, persist, tree};
+use gh_stack::{api, browser, git, graph, markdown, persist, tree};
 
 fn clap<'a, 'b>() -> App<'a, 'b> {
     let identifier = Arg::with_name("identifier")
@@ -140,6 +140,12 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
                 .long("status")
                 .takes_value(false)
                 .help("Show status bits (CI, approval, conflicts, stack health)"),
+        )
+        .arg(
+            Arg::with_name("create-pr")
+                .long("create-pr")
+                .takes_value(false)
+                .help("Create PR via GitHub API if branch has no PR"),
         );
 
     // For status command, identifier is optional (can infer from branch)
@@ -210,6 +216,12 @@ fn clap<'a, 'b>() -> App<'a, 'b> {
                 .long("json")
                 .takes_value(false)
                 .help("Output in JSON format"),
+        )
+        .arg(
+            Arg::with_name("create-pr")
+                .long("create-pr")
+                .takes_value(false)
+                .help("Create PR via GitHub API if branch has no PR"),
         );
 
     let autorebase = SubCommand::with_name("autorebase")
@@ -372,6 +384,102 @@ fn resolve_repository(
 fn remove_title_prefixes(title: String, prefix: &str) -> String {
     let regex = Regex::new(&format!("[{}]", prefix).to_string()).unwrap();
     regex.replace_all(&title, "").into_owned()
+}
+
+/// Get GitHub host URL from repository's git remote
+fn get_github_host(repo: Option<&Repository>, remote_name: &str) -> String {
+    repo.and_then(|r| tree::get_remote_url(r, remote_name))
+        .and_then(|url| browser::parse_github_host(&url))
+        .unwrap_or_else(|| "https://github.com".to_string())
+}
+
+/// Poll for PR existence with timeout
+async fn wait_for_pr(
+    repository: &str,
+    branch: &str,
+    credentials: &Credentials,
+    timeout_secs: u64,
+) -> Option<PullRequest> {
+    use std::time::{Duration, Instant};
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+    let poll_interval = Duration::from_secs(2);
+
+    println!("Waiting for PR to be created...");
+
+    while start.elapsed() < timeout {
+        if let Ok(Some(pr)) = api::stack::fetch_pr_by_head(repository, branch, credentials).await {
+            println!("Found PR #{}!", pr.number());
+            return Some(pr);
+        }
+        print!(".");
+        use std::io::Write;
+        std::io::stdout().flush().ok();
+        tokio::time::sleep(poll_interval).await;
+    }
+    println!();
+
+    None
+}
+
+/// Create a PR via GitHub API with interactive prompts for title/body
+async fn create_pr_interactive(
+    repository: &str,
+    head: &str,
+    base: &str,
+    repo: Option<&Repository>,
+    identifier: Option<&str>,
+    credentials: &Credentials,
+    ci_mode: bool,
+) -> Result<(usize, String), Box<dyn Error>> {
+    use dialoguer::Input;
+
+    // Get default title from first commit message
+    let default_title = repo
+        .and_then(|r| tree::first_commit_message(r, head, base))
+        .unwrap_or_else(|| head.to_string());
+
+    // Add identifier prefix if we have one
+    let default_title = if let Some(id) = identifier {
+        format!("[{}] {}", id, default_title)
+    } else {
+        default_title
+    };
+
+    // Get default body with stack marker
+    let default_body = format!("<!-- gh-stack:[{}] -->", identifier.unwrap_or(""));
+
+    let (title, body) = if ci_mode || !std::io::stdout().is_terminal() {
+        // Non-interactive: use defaults
+        (default_title, default_body)
+    } else {
+        // Interactive: prompt for title and body
+        let title: String = Input::new()
+            .with_prompt("PR title")
+            .default(default_title)
+            .interact_text()?;
+
+        let body: String = Input::new()
+            .with_prompt("PR body (optional)")
+            .default(default_body)
+            .allow_empty(true)
+            .interact_text()?;
+
+        (title, body)
+    };
+
+    println!("\nCreating PR...");
+    let body_opt = if body.is_empty() {
+        None
+    } else {
+        Some(body.as_str())
+    };
+    let (pr_num, url) =
+        api::create::create_pr(repository, head, base, &title, body_opt, credentials).await?;
+    println!("Created: {} (PR #{})\n", style(&url).cyan(), pr_num);
+
+    Ok((pr_num, url))
 }
 
 #[tokio::main]
@@ -576,27 +684,75 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                                 None => {
                                     // No PR found for this branch
-                                    if ci_mode {
+                                    let create_pr_flag = m.is_present("create-pr");
+                                    let github_host =
+                                        get_github_host(repo_handle.as_ref(), remote_name);
+
+                                    if create_pr_flag {
+                                        // Create PR via API
+                                        let (_pr_num, _url) = create_pr_interactive(
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                            repo_handle.as_ref(),
+                                            None, // No identifier known
+                                            &credentials,
+                                            ci_mode,
+                                        )
+                                        .await?;
+
+                                        // Retry discovery
+                                        println!("Retrying stack discovery...");
+                                        if let Some(pr) = api::stack::fetch_pr_by_head(
+                                            &repository,
+                                            &branch,
+                                            &credentials,
+                                        )
+                                        .await?
+                                        {
+                                            let prs = api::stack::discover_stack(
+                                                &repository,
+                                                pr,
+                                                &trunk,
+                                                &credentials,
+                                            )
+                                            .await?;
+                                            let prs: Vec<Rc<PullRequest>> =
+                                                prs.into_iter().map(Rc::new).collect();
+                                            let g = graph::build(&prs);
+                                            graph::log(&g)
+                                        } else {
+                                            eprintln!("PR creation succeeded but could not find PR. Try again.");
+                                            return Ok(());
+                                        }
+                                    } else if ci_mode {
+                                        // CI mode without --create-pr: print URL and exit
                                         eprintln!(
                                             "{} No PR found for branch '{}'",
                                             style("Error:").red().bold(),
                                             branch
                                         );
+                                        browser::suggest_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        );
                                         std::process::exit(1);
-                                    }
-
-                                    // Interactive: suggest creating PR
-                                    if std::io::stdout().is_terminal() {
-                                        if gh_cli::prompt_create_pr(&branch, &trunk)? {
-                                            // Retry after PR creation
-                                            println!("\nRetrying stack discovery...");
-                                            if let Some(pr) = api::stack::fetch_pr_by_head(
-                                                &repository,
-                                                &branch,
-                                                &credentials,
-                                            )
-                                            .await?
+                                    } else if std::io::stdout().is_terminal() {
+                                        // Interactive: prompt to open browser
+                                        if browser::prompt_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        )? {
+                                            // Poll for PR creation
+                                            if let Some(pr) =
+                                                wait_for_pr(&repository, &branch, &credentials, 30)
+                                                    .await
                                             {
+                                                println!("\nRetrying stack discovery...");
                                                 let prs = api::stack::discover_stack(
                                                     &repository,
                                                     pr,
@@ -609,14 +765,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let g = graph::build(&prs);
                                                 graph::log(&g)
                                             } else {
-                                                eprintln!("PR creation may have failed. Please check and try again.");
+                                                eprintln!("\nTimed out waiting for PR. Run the command again after creating the PR.");
                                                 return Ok(());
                                             }
                                         } else {
                                             return Ok(());
                                         }
                                     } else {
-                                        gh_cli::suggest_create_pr(&branch, &trunk);
+                                        // Non-interactive, non-CI: just print URL
+                                        browser::suggest_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        );
                                         return Ok(());
                                     }
                                 }
@@ -1044,7 +1206,58 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                                 None => {
                                     // No PR found for this branch
-                                    if ci_mode || json_output {
+                                    let create_pr_flag = m.is_present("create-pr");
+                                    let github_host =
+                                        get_github_host(repo_handle.as_ref(), remote_name);
+
+                                    if create_pr_flag {
+                                        // Create PR via API
+                                        let (_pr_num, _url) = create_pr_interactive(
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                            repo_handle.as_ref(),
+                                            None, // No identifier known
+                                            &credentials,
+                                            ci_mode,
+                                        )
+                                        .await?;
+
+                                        // Retry discovery
+                                        if !json_output {
+                                            println!("Retrying stack discovery...");
+                                        }
+                                        if let Some(pr) = api::stack::fetch_pr_by_head(
+                                            &repository,
+                                            &branch,
+                                            &credentials,
+                                        )
+                                        .await?
+                                        {
+                                            let prs = api::stack::discover_stack(
+                                                &repository,
+                                                pr,
+                                                &trunk,
+                                                &credentials,
+                                            )
+                                            .await?;
+                                            let prs: Vec<Rc<PullRequest>> =
+                                                prs.into_iter().map(Rc::new).collect();
+                                            let g = graph::build(&prs);
+                                            graph::log(&g)
+                                        } else {
+                                            if json_output {
+                                                println!(
+                                                    r#"{{"error": "PR created but not found", "stack": [], "trunk": "{}"}}"#,
+                                                    trunk
+                                                );
+                                            } else {
+                                                eprintln!("PR creation succeeded but could not find PR. Try again.");
+                                            }
+                                            return Ok(());
+                                        }
+                                    } else if ci_mode || json_output {
+                                        // CI/JSON mode without --create-pr
                                         if json_output {
                                             println!(
                                                 r#"{{"error": "No PR found for branch '{}'", "stack": [], "trunk": "{}"}}"#,
@@ -1056,13 +1269,56 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 style("Error:").red().bold(),
                                                 branch
                                             );
+                                            browser::suggest_create_pr(
+                                                &github_host,
+                                                &repository,
+                                                &branch,
+                                                &trunk,
+                                            );
                                         }
                                         std::process::exit(1);
+                                    } else if std::io::stdout().is_terminal() {
+                                        // Interactive: prompt to open browser
+                                        if browser::prompt_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        )? {
+                                            // Poll for PR creation
+                                            if let Some(pr) =
+                                                wait_for_pr(&repository, &branch, &credentials, 30)
+                                                    .await
+                                            {
+                                                println!("\nRetrying stack discovery...");
+                                                let prs = api::stack::discover_stack(
+                                                    &repository,
+                                                    pr,
+                                                    &trunk,
+                                                    &credentials,
+                                                )
+                                                .await?;
+                                                let prs: Vec<Rc<PullRequest>> =
+                                                    prs.into_iter().map(Rc::new).collect();
+                                                let g = graph::build(&prs);
+                                                graph::log(&g)
+                                            } else {
+                                                eprintln!("\nTimed out waiting for PR. Run the command again after creating the PR.");
+                                                return Ok(());
+                                            }
+                                        } else {
+                                            return Ok(());
+                                        }
+                                    } else {
+                                        // Non-interactive: just print URL
+                                        browser::suggest_create_pr(
+                                            &github_host,
+                                            &repository,
+                                            &branch,
+                                            &trunk,
+                                        );
+                                        return Ok(());
                                     }
-
-                                    // Interactive: suggest creating PR
-                                    gh_cli::suggest_create_pr(&branch, &trunk);
-                                    return Ok(());
                                 }
                             }
                         }

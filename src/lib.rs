@@ -1,5 +1,5 @@
 pub mod api;
-pub mod gh_cli;
+pub mod browser;
 pub mod git;
 pub mod graph;
 pub mod identifier;
